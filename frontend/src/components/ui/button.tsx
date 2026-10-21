@@ -15,6 +15,10 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        // Primary action on the court band: court-line yellow
+        line: "bg-line text-warning-foreground font-semibold hover:bg-line/90 focus-visible:ring-line focus-visible:ring-offset-court",
+        // Secondary action on the court band
+        band: "border border-white/25 text-court-foreground hover:bg-white/10 focus-visible:ring-line focus-visible:ring-offset-court",
       },
       size: {
         default: "h-10 px-4 py-2",

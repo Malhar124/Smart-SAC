@@ -1,113 +1,74 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { serverFieldErrors, staffLoginSchema, validate, type FieldErrors } from "@/lib/schemas";
+import AuthLayout from "@/components/AuthLayout";
+import { Field, fieldProps } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Shield } from "lucide-react";
 
 const AdminLogin = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const { login } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const navigate = useNavigate();
+  const [values, setValues] = useState({ email: "", password: "" });
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setErrorMsg(""); // reset previous errors
-
+    setFormError(null);
+    const result = validate(staffLoginSchema, values);
+    setErrors(result.errors ?? {});
+    if (!result.data) return;
+    setPending(true);
     try {
-      await login("admin", { email, password });
-      // Navigation to /admin/dashboard handled inside AuthContext
-    } catch (error: any) {
-      console.error("Admin login failed:", error);
-
-      // 🔹 Extract a readable error message safely
-      const message =
-        error?.message ||
-        error?.response?.data?.message ||
-        "Login failed. Please check your credentials.";
-      setErrorMsg(message);
+      await login("admin", result.data);
+      toast.success("Signed in");
+    } catch (error) {
+      setErrors(serverFieldErrors(error));
+      setFormError(error instanceof Error ? error.message : "Couldn't sign in. Try again.");
     } finally {
-      setIsLoading(false);
+      setPending(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <Shield className="w-12 h-12 mx-auto text-primary" />
-          <CardTitle className="mt-4">Admin Login</CardTitle>
-          <CardDescription>
-            Enter your credentials to access the admin panel
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Admin Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@smartsac.com"
-                disabled={isLoading}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                disabled={isLoading}
-                required
-              />
-            </div>
-
-            {errorMsg && (
-              <p className="text-red-500 text-sm text-center">{errorMsg}</p>
-            )}
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Logging in..." : "Login"}
-            </Button>
-          </form>
-          <p className="text-sm text-center mt-4">
-            Don't have an admin account?{" "}
-            <span
-              onClick={() => navigate("/admin/register")}
-              className="text-primary cursor-pointer hover:underline"
-            >
-              Register here
-            </span>
+    <AuthLayout>
+      <div className="space-y-3">
+        <h1 className="type-title text-5xl">Staff sign in</h1>
+        <p className="text-muted-foreground">For SAC desk staff. Students sign in from the main page.</p>
+      </div>
+      <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
+        {formError && (
+          <p className="border-l-4 border-destructive bg-destructive/10 rounded-r-md px-3 py-2 text-sm" role="alert">
+            {formError}
           </p>
-          <p className="text-sm text-center mt-2">
-            <span
-              onClick={() => navigate("/")}
-              className="text-muted-foreground cursor-pointer hover:underline"
-            >
-              ← Back to home
-            </span>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+        <Field id="email" label="Email" error={errors.email}>
+          <Input {...fieldProps("email", errors.email)} type="email" autoComplete="username" value={values.email} onChange={(e) => setValues({ ...values, email: e.target.value })} disabled={pending} autoFocus />
+        </Field>
+        <Field id="password" label="Password" error={errors.password}>
+          <Input
+            {...fieldProps("password", errors.password)}
+            type="password"
+            autoComplete="current-password"
+            value={values.password}
+            onChange={(e) => setValues({ ...values, password: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Button type="submit" className="w-full" disabled={pending}>
+          {pending ? "Signing in…" : "Sign in"}
+        </Button>
+        <p className="text-center text-sm">
+          First time at the desk?{" "}
+          <Link to="/admin/register" className="font-medium text-primary hover:underline">
+            Create a staff account
+          </Link>
+        </p>
+      </form>
+    </AuthLayout>
   );
 };
 

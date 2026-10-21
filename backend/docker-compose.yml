@@ -1,0 +1,22 @@
+# Local PostgreSQL for development: `npm run db:up` (from backend/)
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smart-sac-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smartsac
+      POSTGRES_PASSWORD: smartsac
+      POSTGRES_DB: smart_sac
+    ports:
+      - "5432:5432"
+    volumes:
+      - smart-sac-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartsac -d smart_sac"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  smart-sac-pgdata:

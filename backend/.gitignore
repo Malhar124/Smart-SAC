@@ -112,3 +112,8 @@ dist
 .yarn/install-state.gz
 .pnp.*
 /src/generated/prisma
+
+
+# Any local env variants (keep the example committed)
+.env.*
+!.env.example

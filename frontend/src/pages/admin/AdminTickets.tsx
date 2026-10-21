@@ -1,436 +1,232 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Search } from "lucide-react";
+import { api, qs } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { formatDayClock, TICKET_STATUS_LABEL, timeAgo } from "@/lib/format";
+import type { StaffTicketList, Ticket, TicketStatus } from "@/lib/types";
+import Navbar from "@/components/Navbar";
+import PageHeader from "@/components/PageHeader";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/states";
+import { TicketReplyForm, TicketStatusLabel, TicketTimeline } from "@/components/TicketTimeline";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { api } from "@/lib/api";
-import { toast as sonner } from "sonner";
-import { Search, Filter, Eye, MessageSquare, CheckCircle, XCircle, Clock, ArrowLeft } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
-// Define types
-interface Ticket {
-  id: string;
-  heading: string;
-  content: string;
-  status: "open" | "in_process" | "in-process" | "closed";
-  equipment: {
-    id: string;
-    name: string;
-  } | null;
-  sender: {
-    id: string;
-    fullname: string;
-    email: string;
-    roll_no: string;
+type Filter = "all" | TicketStatus;
+const FILTERS: Filter[] = ["open", "in_process", "closed", "all"];
+
+const useDebounced = (value: string, ms = 300) => {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+};
+
+const TicketDetail = ({ ticketId }: { ticketId: string }) => {
+  const queryClient = useQueryClient();
+  const [note, setNote] = useState("");
+  const ticket = useQuery({ queryKey: qk.ticket(ticketId), queryFn: () => api.get<Ticket>(`/admin/get-ticket/${ticketId}`) });
+
+  const update = (fresh: Ticket) => {
+    queryClient.setQueryData(qk.ticket(fresh.id), fresh);
+    queryClient.invalidateQueries({ queryKey: qk.staffTickets });
+    queryClient.invalidateQueries({ queryKey: qk.staffDashboard });
   };
-  createdAt: string;
-  updatedAt: string;
-}
 
-// Normalize Prisma enum status (in_process) to display format (in-process)
-const normalizeStatus = (status: string): string => {
-  if (status === "in_process") return "in-process";
-  return status;
+  const setStatus = useMutation({
+    mutationFn: (newStatus: TicketStatus) => api.post<Ticket>("/admin/update-ticket", { ticketId, newStatus, note: note.trim() || undefined }),
+    onSuccess: (fresh, status) => {
+      update(fresh);
+      setNote("");
+      toast.success(`Marked ${TICKET_STATUS_LABEL[status].toLowerCase()}`, { description: "The student has been notified." });
+    },
+  });
+  const reply = useMutation({
+    mutationFn: (body: string) => api.post<Ticket>(`/admin/add-ticket-comment/${ticketId}`, { body }),
+    onSuccess: (fresh) => {
+      update(fresh);
+      toast.success("Reply sent", { description: "The student gets a notification." });
+    },
+  });
+
+  if (ticket.isLoading) return <ListSkeleton rows={4} />;
+  if (ticket.error || !ticket.data) return <ErrorState title="Couldn't open that ticket" error={ticket.error} onRetry={() => ticket.refetch()} />;
+  const t = ticket.data;
+
+  return (
+    <article className="space-y-6">
+      <header>
+        <h2 className="type-heading text-2xl">{t.heading}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t.sender?.fullname} ({t.sender?.roll_no}),{" "}
+          <a href={`mailto:${t.sender?.email}`} className="hover:text-primary underline-offset-4 hover:underline">
+            {t.sender?.email}
+          </a>
+        </p>
+        <p className="mt-1 text-sm">
+          <span className="capitalize">{t.kind === "broken" ? `Broken: ${t.equipment?.name ?? "removed item"}` : `Request: ${t.requestedItem} for ${t.requestedGame}`}</span>
+          <span className="text-muted-foreground">, opened {formatDayClock(t.createdAt)}</span>
+        </p>
+      </header>
+
+      <TicketTimeline ticket={t} viewer="staff" />
+
+      <section aria-labelledby="status-heading" className="space-y-3 border-t border-border pt-5">
+        <h3 id="status-heading" className="text-sm font-medium flex items-center gap-2">
+          Status <TicketStatusLabel status={t.status} />
+        </h3>
+        <label htmlFor="status-note" className="sr-only">
+          Note to the student
+        </label>
+        <Input id="status-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note sent with the status change" maxLength={1000} />
+        <div className="flex flex-wrap gap-2">
+          {(["open", "in_process", "closed"] as const)
+            .filter((s) => s !== t.status)
+            .map((s) => (
+              <Button key={s} size="sm" variant={s === "closed" ? "default" : "outline"} disabled={setStatus.isPending} onClick={() => setStatus.mutate(s)}>
+                {s === "open" ? "Reopen" : s === "in_process" ? "Start work" : "Close ticket"}
+              </Button>
+            ))}
+        </div>
+      </section>
+
+      {t.status !== "closed" && (
+        <TicketReplyForm onSubmit={(body) => reply.mutateAsync(body)} pending={reply.isPending} placeholder="Ask a question or say what's being done" />
+      )}
+    </article>
+  );
 };
 
 const AdminTickets = () => {
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [params, setParams] = useSearchParams();
+  const selectedId = params.get("ticket");
+  const [filter, setFilter] = useState<Filter>("open");
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const q = useDebounced(search.trim());
 
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
+  useEffect(() => setPage(1), [filter, q]);
 
-  // 🔹 Fetch all tickets for admin - USING DIRECT API CALL LIKE ANNOUNCEMENTS
-  const { data: tickets, isLoading, error } = useQuery<Ticket[]>({
-    queryKey: ["adminTickets"],
-    queryFn: async () => {
-      try {
-        const res = await api.get("/admin/get-active-tickets");
-        // api.get already unwraps res.data, so res is the payload directly
-        const ticketList = res.tickets || res;
-        // Normalize status values from Prisma enum format
-        return (Array.isArray(ticketList) ? ticketList : []).map((t: any) => ({
-          ...t,
-          status: normalizeStatus(t.status),
-        }));
-      } catch (err: any) {
-        console.error("Fetch tickets error:", err);
-        const errorMessage = err?.response?.data?.message || err.message || "Failed to fetch tickets";
-        sonner.error(errorMessage);
-        throw err;
-      }
-    },
-    retry: 1,
+  const list = useQuery({
+    queryKey: [...qk.staffTickets, filter, page, q],
+    queryFn: () => api.get<StaffTicketList>(`/admin/get-tickets${qs({ status: filter, page, q })}`),
+    placeholderData: keepPreviousData,
   });
 
-  // 🔹 Update ticket status mutation - USING DIRECT API CALL
-  const updateTicketMutation = useMutation({
-    mutationFn: async ({ ticketId, status }: { ticketId: string; status: string }) => {
-      try {
-        const newStatus = status;
-        const res = await api.post("/admin/update-ticket", { ticketId, newStatus });
-        return res.data;
-      } catch (err: any) {
-        console.error("Update ticket error:", err);
-        const errorMessage = err?.response?.data?.message || err.message || "Failed to update ticket";
-        sonner.error(errorMessage);
-        throw err;
-      }
-    },
-    onSuccess: () => {
-      sonner.success("Ticket status updated successfully!");
-      queryClient.invalidateQueries({ queryKey: ["adminTickets"] });
-      queryClient.invalidateQueries({ queryKey: ["adminDashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["activeTickets"] });
-      setIsDialogOpen(false);
-      setSelectedTicket(null);
-    },
-    onError: (error: any) => {
-      console.error("Mutation error:", error);
-      // Error is already handled in mutationFn
-    },
-  });
-
-  const handleStatusUpdate = (ticketId: string, newStatus: string) => {
-    updateTicketMutation.mutate({ ticketId, status: newStatus });
+  const open = (id: string | null) => {
+    const next = new URLSearchParams(params);
+    if (id) next.set("ticket", id);
+    else next.delete("ticket");
+    setParams(next, { replace: true });
   };
 
-  const openTicketDetails = (ticket: Ticket) => {
-    setSelectedTicket(ticket);
-    setIsDialogOpen(true);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "open":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "in-process":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "closed":
-        return "bg-gray-100 text-gray-800 border-gray-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "open":
-        return <Clock className="w-4 h-4" />;
-      case "in-process":
-        return <MessageSquare className="w-4 h-4" />;
-      case "closed":
-        return <XCircle className="w-4 h-4" />;
-      default:
-        return <Clock className="w-4 h-4" />;
-    }
-  };
-
-  // Filter tickets based on search and status
-  const filteredTickets = tickets?.filter(ticket => {
-    const matchesSearch = 
-      ticket.heading.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (ticket.equipment?.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (ticket.sender?.fullname && ticket.sender.fullname.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesStatus = statusFilter === "all" || ticket.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6 text-center">
-            <XCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
-            <h2 className="text-xl font-bold mb-2">Error Loading Tickets</h2>
-            <p className="text-muted-foreground mb-4">
-              {error.message || "Failed to load tickets. Please try again."}
-            </p>
-            <Button onClick={() => window.location.reload()}>
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const data = list.data;
 
   return (
     <div className="min-h-screen bg-background">
-      <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-lg border-b border-border">
-        <div className="container mx-auto px-4 md:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/admin/dashboard")}
-                className="gap-2"
+      <Navbar role="admin" />
+      <PageHeader title="Tickets" description="Broken equipment reports and requests for new equipment from students." />
+
+      <main id="main" tabIndex={-1} className="container mx-auto max-w-6xl px-4 md:px-6 pt-10 pb-16 focus:outline-none">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+          <div className="inline-flex flex-wrap rounded-md border border-border p-0.5 bg-card w-fit" role="group" aria-label="Filter by status">
+            {FILTERS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+                className={cn(
+                  "h-8 px-3 rounded-[calc(var(--radius)-2px)] text-sm font-medium transition-colors tabular",
+                  filter === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                <ArrowLeft className="w-4 h-4" />
-                Back to Dashboard
-              </Button>
-              <div className="w-10 h-10 rounded-lg bg-gradient-primary flex items-center justify-center">
-                <MessageSquare className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <span className="text-xl font-bold">Smart SAC</span>
-                <span className="ml-2 text-sm text-muted-foreground">
-                  Ticket Management
-                </span>
-              </div>
-            </div>
+                {value === "all" ? "All" : TICKET_STATUS_LABEL[value]} {data && `(${data.counts[value]})`}
+              </button>
+            ))}
+          </div>
+          <div className="relative sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden />
+            <Input
+              type="search"
+              placeholder="Search heading, item or student"
+              aria-label="Search tickets by heading, item or student"
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
         </div>
-      </nav>
 
-      <main className="container mx-auto px-4 md:px-8 pt-28 pb-16">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
           <div>
-            <h1 className="text-3xl font-bold">Ticket Management</h1>
-            <p className="text-muted-foreground mt-2">
-              Manage and resolve equipment complaints
-            </p>
-          </div>
-          <div className="flex items-center gap-2 mt-4 md:mt-0">
-            <Badge variant="secondary" className="text-sm">
-              Total: {tickets?.length || 0}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Filters and Search */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              {/* Search */}
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                  <Input
-                    placeholder="Search tickets by heading, equipment, or user..."
-                    className="pl-10"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              {/* Status Filter */}
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-40">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="in-process">In process</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Tickets List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>All Tickets</CardTitle>
-            <CardDescription>
-              {filteredTickets?.length || 0} ticket(s) found
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                <p className="text-muted-foreground mt-2">Loading tickets...</p>
-              </div>
-            ) : filteredTickets?.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">
-                  {tickets?.length === 0 ? "No tickets found" : "No tickets match your filters"}
-                </p>
-              </div>
+            {list.error ? (
+              <ErrorState title="Couldn't load tickets" error={list.error} onRetry={() => list.refetch()} />
+            ) : !data ? (
+              <ListSkeleton rows={5} rowClassName="h-16" />
+            ) : data.tickets.length === 0 ? (
+              <EmptyState title={q ? `No tickets match “${q}”` : filter === "open" ? "No open tickets" : "No tickets here"}>
+                {filter === "open" && !q ? "Nothing is waiting on the desk." : "Try another status or search."}
+              </EmptyState>
             ) : (
-              <div className="space-y-4">
-                {filteredTickets?.map((ticket) => (
-                  <Card key={ticket.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-start gap-3">
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-lg mb-1">
-                                {ticket.heading}
-                              </h3>
-                              <p className="text-muted-foreground text-sm mb-2 line-clamp-2">
-                                {ticket.content}
-                              </p>
-                              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                                <Badge variant="outline" className="capitalize">
-                                  {ticket.equipment?.name || "New Equipment Request"}
-                                </Badge>
-                                <span>By: {ticket.sender?.fullname || "Unknown"}</span>
-                                <span>Roll No: {ticket.sender?.roll_no || "N/A"}</span>
-                                <span>
-                                  {new Date(ticket.createdAt).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row gap-2 items-start md:items-end">
-                          {/* Status Badge */}
-                          <Badge className={`${getStatusColor(ticket.status)} flex items-center gap-1`}>
-                            {getStatusIcon(ticket.status)}
-                            {ticket.status.replace("-", " ")}
-                          </Badge>
-                          
-                          {/* Actions */}
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openTicketDetails(ticket)}
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              View
-                            </Button>
-                            
-                            {/* Quick Status Update */}
-                            {ticket.status !== "closed" && (
-                              <Select
-                                value=""
-                                onValueChange={(newStatus) => 
-                                  handleStatusUpdate(ticket.id, newStatus)
-                                }
-                              >
-                                <SelectTrigger className="w-32">
-                                  <SelectValue placeholder="Actions" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="in-process">Mark In process</SelectItem>
-                                  <SelectItem value="closed">Close</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Ticket Details Dialog */}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            {selectedTicket && (
               <>
-                <DialogHeader>
-                  <DialogTitle>{selectedTicket.heading}</DialogTitle>
-                  <DialogDescription>
-                    Equipment: {selectedTicket.equipment?.name || "New Equipment Request"}
-                  </DialogDescription>
-                </DialogHeader>
-                
-                <div className="space-y-4">
-                  <div>
-                    <Label>Description</Label>
-                    <p className="text-sm mt-1 p-3 bg-muted rounded-lg">
-                      {selectedTicket.content}
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Reported By</Label>
-                      <p className="text-sm mt-1">{selectedTicket.sender.fullname}</p>
-                    </div>
-                    <div>
-                      <Label>Roll Number</Label>
-                      <p className="text-sm mt-1">{selectedTicket.sender.roll_no}</p>
-                    </div>
-                    <div>
-                      <Label>Email</Label>
-                      <p className="text-sm mt-1">{selectedTicket.sender.email}</p>
-                    </div>
-                    <div>
-                      <Label>Reported On</Label>
-                      <p className="text-sm mt-1">
-                        {new Date(selectedTicket.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label>Current Status</Label>
-                    <div className="mt-2">
-                      <Badge className={`${getStatusColor(selectedTicket.status)} text-sm`}>
-                        {selectedTicket.status.replace("-", " ")}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label>Update Status</Label>
-                    <div className="flex gap-2 mt-2 flex-wrap">
-                      {["open", "in-process", "closed"].map((status) => (
-                        <Button
-                          key={status}
-                          variant={selectedTicket.status === status ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handleStatusUpdate(selectedTicket.id, status)}
-                          disabled={updateTicketMutation.isPending}
-                        >
-                          {status.replace("-", " ")}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsDialogOpen(false)}
-                  >
-                    Close
-                  </Button>
-                </DialogFooter>
+                <ul className={cn("divide-y divide-border border-y border-border transition-opacity", list.isFetching && "opacity-70")} aria-label="Tickets">
+                  {data.tickets.map((t) => (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        onClick={() => open(t.id)}
+                        aria-current={selectedId === t.id ? "true" : undefined}
+                        className={cn(
+                          "w-full text-left px-3 py-3 border-l-[3px] transition-colors hover:bg-accent",
+                          selectedId === t.id ? "border-primary bg-accent" : "border-transparent"
+                        )}
+                      >
+                        <span className="block font-medium leading-snug">{t.heading}</span>
+                        <span className="mt-0.5 block text-sm text-muted-foreground truncate">
+                          <span className={cn(t.equipment && "capitalize")}>{t.equipment?.name ?? "New equipment request"}</span>, {t.sender?.fullname}
+                        </span>
+                        <span className="mt-1 flex items-center justify-between gap-3">
+                          <TicketStatusLabel status={t.status} />
+                          <span className="text-xs text-muted-foreground">
+                            {t.replies ? `${t.replies} ${t.replies === 1 ? "reply" : "replies"}, ` : ""}
+                            {timeAgo(t.updatedAt)}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {data.totalPages > 1 && (
+                  <nav className="mt-4 flex items-center gap-3" aria-label="Pages">
+                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground tabular">
+                      Page {data.page} of {data.totalPages}
+                    </span>
+                    <Button variant="outline" size="sm" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>
+                      Next
+                    </Button>
+                  </nav>
+                )}
               </>
             )}
-          </DialogContent>
-        </Dialog>
+          </div>
+
+          <section aria-live="polite" className="min-w-0">
+            {selectedId ? (
+              <TicketDetail key={selectedId} ticketId={selectedId} />
+            ) : (
+              <p className="text-muted-foreground">Pick a ticket to see its history, reply or change its status.</p>
+            )}
+          </section>
+        </div>
       </main>
     </div>
   );

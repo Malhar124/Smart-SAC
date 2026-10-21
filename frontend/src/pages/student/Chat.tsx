@@ -1,108 +1,141 @@
 import Navbar from "@/components/Navbar";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import PageHeader from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Search, Send, MoreVertical, MessageCircle, Clock, UserPlus, ArrowLeft } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Search, Send, Plus, ArrowLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { qk } from "@/lib/queryKeys";
+import type { ChatMessage, Conversation, Player } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
-import { toast as sonner } from "sonner";
 
-interface ApiConversation {
-  otherUser: {
-    id: string;
-    fullname: string;
-    sport: string;
-    isAvailable: boolean;
-  };
-  lastMessage: string;
-  lastMessageStatus: string;
-  lastMessageSender: string;
-  lastMessageCreatedAt: string;
-  unreadCount: number;
-}
+type ApiConversation = Conversation;
 
-interface ApiMessage {
-  id: string;
-  sender: string;
-  content: string;
-  createdAt: string;
-}
+const PersonRow = ({
+  name,
+  detail,
+  meta,
+  unread = 0,
+  selected,
+  onSelect,
+}: {
+  name: string;
+  detail: ReactNode;
+  meta?: string;
+  unread?: number;
+  selected: boolean;
+  onSelect: () => void;
+}) => (
+  <li>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={selected ? "true" : undefined}
+      className={cn(
+        "w-full text-left px-4 py-3 border-l-[3px] transition-colors hover:bg-accent focus-visible:outline-offset-[-2px]",
+        selected ? "border-primary bg-accent" : "border-transparent"
+      )}
+    >
+      <span className="flex items-baseline justify-between gap-3">
+        <span className={cn("truncate", unread > 0 ? "font-semibold" : "font-medium")}>{name}</span>
+        {meta && <span className="text-xs text-muted-foreground shrink-0">{meta}</span>}
+      </span>
+      <span className="mt-0.5 flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground truncate">{detail}</span>
+        {unread > 0 && (
+          <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold tabular grid place-items-center">
+            {unread}
+            <span className="sr-only"> unread</span>
+          </span>
+        )}
+      </span>
+    </button>
+  </li>
+);
 
-interface Player {
-  id: string;
-  fullname: string;
-  games: { game: { name: string }; rating: number }[];
-}
+const ListNote = ({ children }: { children: ReactNode }) => (
+  <p className="px-4 pt-4 pb-1 text-sm text-muted-foreground">{children}</p>
+);
 
 const Chat = () => {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
-  const { user, wrapApiCall } = useAuth();
+  // Phones show either the list or the open thread; this tracks which
+  const [threadOpen, setThreadOpen] = useState(false);
+  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLLIElement>(null);
 
-  const { data: conversations, isLoading: isLoadingConversations } = useQuery<ApiConversation[]>({
-    queryKey: ["conversations"],
-    queryFn: () => wrapApiCall(() => api.get("/users/get-conversations"))
+  const { data: conversations, isLoading: isLoadingConversations } = useQuery({
+    queryKey: qk.conversations,
+    queryFn: () => api.get<ApiConversation[]>("/users/get-conversations"),
   });
 
-  // Fetch all registered users for starting new conversations
-  const { data: allPlayers, isLoading: isLoadingPlayers } = useQuery<Player[]>({
-    queryKey: ["allPlayers"],
-    queryFn: () => wrapApiCall(() => api.get("/users/get-all-players"))
+  // Every registered student, for starting new conversations
+  const { data: allPlayers, isLoading: isLoadingPlayers } = useQuery({
+    queryKey: qk.players,
+    queryFn: () => api.get<Player[]>("/users/get-all-players"),
   });
 
-  const fetchMessages = (otherUserId: string) => {
-    return wrapApiCall(() => api.get(`/users/get-messages/${otherUserId}`)) as Promise<ApiMessage[]>;
-  };
-
-  const { data: messages, isLoading: isLoadingMessages, isSuccess: isMessagesSuccess } = useQuery({
-    queryKey: ["messages", selectedChatId],
-    queryFn: () => fetchMessages(selectedChatId!),
+  // Opening a thread marks it read on the server, which pushes a live update that refreshes badges
+  const { data: messages, isLoading: isLoadingMessages } = useQuery({
+    queryKey: qk.messages(selectedChatId ?? ""),
+    queryFn: () => api.get<ChatMessage[]>(`/users/get-messages/${selectedChatId}`),
     enabled: !!selectedChatId,
   });
 
+  // The message appears in the thread at once, marked as sending, and is swapped for the saved one
   const sendMessageMutation = useMutation({
-    mutationFn: (variables: { receiverId: string; content: string }) => {
-      return wrapApiCall(() => api.post("/users/send-message", variables));
-    },
-    onSuccess: () => {
+    mutationFn: (variables: { receiverId: string; content: string }) => api.post<ChatMessage>("/users/send-message", variables),
+    onMutate: async (variables) => {
+      const key = qk.messages(variables.receiverId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<ChatMessage[]>(key);
+      const optimistic: ChatMessage = {
+        id: `pending-${Date.now()}`,
+        sender: user?.id ?? "",
+        content: variables.content,
+        createdAt: new Date().toISOString(),
+        status: "sent",
+        pending: true,
+      };
+      queryClient.setQueryData<ChatMessage[]>(key, [...(previous ?? []), optimistic]);
       setMessage("");
       setShowNewChat(false);
-      queryClient.invalidateQueries({ queryKey: ["messages", selectedChatId] });
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      return { previous, key, content: variables.content };
     },
-    onError: (error) => {
-      console.error("Failed to send message", error);
-      sonner.error("Failed to send message");
+    onError: (_error, _variables, context) => {
+      if (context) {
+        queryClient.setQueryData(context.key, context.previous);
+        setMessage(context.content);
+      }
+    },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: qk.messages(variables.receiverId) });
+      queryClient.invalidateQueries({ queryKey: qk.conversations });
     },
   });
 
   const handleSend = () => {
     if (message.trim() && selectedChatId) {
-      sendMessageMutation.mutate({
-        receiverId: selectedChatId,
-        content: message,
-      });
+      sendMessageMutation.mutate({ receiverId: selectedChatId, content: message.trim() });
     }
   };
 
   useEffect(() => {
-    if (isMessagesSuccess) {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-    }
-  }, [isMessagesSuccess, queryClient]);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const openThread = (id: string) => {
+    setSelectedChatId(id);
+    setThreadOpen(true);
+  };
 
   const selectedChat = conversations?.find((c) => c.otherUser.id === selectedChatId);
 
@@ -127,352 +160,242 @@ const Chat = () => {
   );
 
   const handleStartNewChat = (playerId: string) => {
-    setSelectedChatId(playerId);
+    openThread(playerId);
     setShowNewChat(false);
   };
 
   // Determine the name/sport for chat header
   const chatHeaderName = selectedChat?.otherUser.fullname || selectedPlayer?.fullname || "";
   const chatHeaderSport = selectedChat?.otherUser.sport || 
-    (selectedPlayer?.games?.map(g => g.game.name).join(", ") || "N/A");
+    (selectedPlayer?.games?.map(g => g.game.name).join(", ") || "");
+
+  const timeAgo = (iso: string) => formatDistanceToNow(new Date(iso), { addSuffix: true });
+
+  const hasThread = !!selectedChatId && !!(selectedChat || selectedPlayer);
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      <main className="container mx-auto px-4 md:px-6 pt-24 pb-12">
-        <div className="mb-6 animate-fade-in">
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">Messages</h1>
-          <p className="text-muted-foreground">Chat with other students and coordinate games</p>
-        </div>
+      <PageHeader title="Chat" compact />
 
-        <div className="grid lg:grid-cols-3 gap-6 h-[calc(100vh-250px)]">
-          {/* Conversations List */}
-          <Card className="border-2 lg:col-span-1 animate-scale-in">
-            <CardHeader className="border-b">
-              <div className="flex items-center gap-2">
-                {showNewChat && (
+      <main id="main" tabIndex={-1} className="focus:outline-none container mx-auto max-w-6xl px-4 md:px-6 pt-8 pb-6">
+
+        <div className="grid lg:grid-cols-[20rem_minmax(0,1fr)] border border-border rounded-lg bg-card h-[calc(100dvh-13.5rem)] min-h-[26rem] overflow-hidden">
+          {/* Conversation list */}
+          <section
+            aria-label={showNewChat ? "Start a conversation" : "Conversations"}
+            className={cn("flex flex-col min-h-0 lg:border-r border-border", threadOpen && "hidden lg:flex")}
+          >
+            <div className="flex items-center gap-2 p-3 border-b border-border">
+              {showNewChat && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setShowNewChat(false)}
+                  aria-label="Back to conversations"
+                >
+                  <ArrowLeft />
+                </Button>
+              )}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden />
+                <Input
+                  type="search"
+                  placeholder={showNewChat ? "Search students" : "Search chats"}
+                  aria-label={showNewChat ? "Search students" : "Search chats"}
+                  className="pl-9"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              {!showNewChat && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => {
+                    setShowNewChat(true);
+                    setSearchQuery("");
+                  }}
+                  aria-label="New conversation"
+                  title="New conversation"
+                >
+                  <Plus />
+                </Button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {showNewChat ? (
+                <>
+                  <ListNote>Pick someone to message.</ListNote>
+                  {isLoadingPlayers ? (
+                    <div className="p-4 space-y-3">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : filteredNewChatUsers.length === 0 ? (
+                    <p className="px-4 py-2 text-sm text-muted-foreground">
+                      {searchQuery ? "No one matches that name." : "You've already got a chat with everyone."}
+                    </p>
+                  ) : (
+                    <ul>
+                      {filteredNewChatUsers.map((player) => (
+                        <PersonRow
+                          key={player.id}
+                          selected={selectedChatId === player.id}
+                          name={player.fullname}
+                          detail={<span className="capitalize">{player.games?.map((g) => g.game.name).join(", ") || "No games added"}</span>}
+                          onSelect={() => handleStartNewChat(player.id)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : isLoadingConversations ? (
+                <div className="p-4 space-y-3" aria-label="Loading chats">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : !filteredConversations || filteredConversations.length === 0 ? (
+                <div className="p-6">
+                  <p className="text-sm text-muted-foreground">
+                    {searchQuery ? "No chats match that name." : "No chats yet. Message someone to plan a game."}
+                  </p>
+                  {!searchQuery && (
+                    <Button variant="outline" size="sm" className="mt-3" onClick={() => setShowNewChat(true)}>
+                      Start a chat
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <ul>
+                  {filteredConversations.map((conv) => (
+                    <PersonRow
+                      key={conv.otherUser.id}
+                      selected={selectedChatId === conv.otherUser.id}
+                      name={conv.otherUser.fullname}
+                      meta={timeAgo(conv.lastMessageCreatedAt)}
+                      unread={conv.unreadCount}
+                      detail={
+                        <>
+                          {conv.lastMessageSender === user?.id ? "You: " : ""}
+                          {conv.lastMessage}
+                        </>
+                      }
+                      onSelect={() => openThread(conv.otherUser.id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          {/* Open thread */}
+          <section
+            aria-label={hasThread ? `Chat with ${chatHeaderName}` : "No chat open"}
+            className={cn("flex flex-col min-h-0", !threadOpen && "hidden lg:flex")}
+          >
+            {hasThread ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-3 border-b border-border min-h-[4.0625rem]">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="shrink-0"
-                    onClick={() => setShowNewChat(false)}
+                    className="lg:hidden shrink-0"
+                    onClick={() => setThreadOpen(false)}
+                    aria-label="Back to chats"
                   >
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft />
                   </Button>
-                )}
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder={showNewChat ? "Search users..." : "Search conversations..."}
-                    className="pl-9"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                {!showNewChat && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="shrink-0"
-                    onClick={() => {
-                      setShowNewChat(true);
-                      setSearchQuery("");
-                    }}
-                    title="New conversation"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 overflow-y-auto">
-              <div className="divide-y">
-                {/* Show "New Chat" user list */}
-                {showNewChat && (
-                  <>
-                    <div className="p-3 bg-muted/50">
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Select a user to start chatting
-                      </p>
-                    </div>
-                    {isLoadingPlayers && (
-                      <p className="p-4 text-center text-muted-foreground">Loading users...</p>
+                  <div className="min-w-0 lg:pl-1">
+                    <h2 className="font-semibold truncate">{chatHeaderName}</h2>
+                    {chatHeaderSport && (
+                      <p className="text-sm text-muted-foreground capitalize truncate">{chatHeaderSport}</p>
                     )}
-                    {filteredNewChatUsers.length === 0 && !isLoadingPlayers && (
-                      <p className="p-4 text-center text-muted-foreground">No new users to chat with</p>
-                    )}
-                    {filteredNewChatUsers.map((player) => (
-                      <div
-                        key={player.id}
-                        onClick={() => handleStartNewChat(player.id)}
-                        className={`p-4 cursor-pointer transition-colors hover:bg-accent ${
-                          selectedChatId === player.id ? "bg-accent" : ""
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-12 h-12 border-2 border-primary/20">
-                            <AvatarFallback className="bg-gradient-primary text-white">
-                              {player.fullname
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold truncate">{player.fullname}</h3>
-                            <p className="text-sm text-muted-foreground capitalize">
-                              {player.games?.map(g => g.game.name).join(", ") || "No games"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {/* Also show existing conversation users in new chat mode */}
-                    {conversations && conversations.length > 0 && (
-                      <>
-                        <div className="p-3 bg-muted/50">
-                          <p className="text-sm font-medium text-muted-foreground">
-                            Existing conversations
-                          </p>
-                        </div>
-                        {conversations
-                          .filter(c => c.otherUser.fullname.toLowerCase().includes(searchQuery.toLowerCase()))
-                          .map((conv) => (
-                          <div
-                            key={conv.otherUser.id}
-                            onClick={() => handleStartNewChat(conv.otherUser.id)}
-                            className={`p-4 cursor-pointer transition-colors hover:bg-accent ${
-                              selectedChatId === conv.otherUser.id ? "bg-accent" : ""
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Avatar className="w-12 h-12 border-2 border-primary/20">
-                                <AvatarFallback className="bg-gradient-primary text-white">
-                                  {conv.otherUser.fullname
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .join("")}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold truncate">{conv.otherUser.fullname}</h3>
-                                <p className="text-sm text-muted-foreground capitalize">
-                                  {conv.otherUser.sport}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </>
-                )}
-
-                {/* Show existing conversations list (default view) */}
-                {!showNewChat && (
-                  <>
-                    {isLoadingConversations && (
-                      <p className="p-4 text-center">Loading chats...</p>
-                    )}
-                    {!isLoadingConversations && (!filteredConversations || filteredConversations.length === 0) && (
-                      <div className="p-6 text-center">
-                        <MessageCircle className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground mb-3">No conversations yet</p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowNewChat(true)}
-                          className="gap-2"
-                        >
-                          <UserPlus className="w-4 h-4" />
-                          Start a new chat
-                        </Button>
-                      </div>
-                    )}
-                    {filteredConversations?.map((conv) => (
-                      <div
-                        key={conv.otherUser.id}
-                        onClick={() => setSelectedChatId(conv.otherUser.id)}
-                        className={`p-4 cursor-pointer transition-colors hover:bg-accent ${
-                          selectedChatId === conv.otherUser.id ? "bg-accent" : ""
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="relative">
-                            <Avatar className="w-12 h-12 border-2 border-primary/20">
-                              <AvatarFallback className="bg-gradient-primary text-white">
-                                {conv.otherUser.fullname
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            {conv.otherUser.isAvailable && (
-                              <div className="absolute bottom-0 right-0 w-3 h-3 bg-success rounded-full border-2 border-background" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <h3 className="font-semibold truncate">
-                                {conv.otherUser.fullname}
-                              </h3>
-                              <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                                {formatDistanceToNow(
-                                  new Date(conv.lastMessageCreatedAt),
-                                  { addSuffix: true }
-                                )}
-                              </span>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-1 capitalize">
-                              {conv.otherUser.sport}
-                            </p>
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm text-muted-foreground truncate">
-                                {conv.lastMessageSender === user?.id ? "You: " : ""}
-                                {conv.lastMessage}
-                              </p>
-                              {conv.unreadCount > 0 && (
-                                <Badge className="ml-2 bg-primary text-primary-foreground flex-shrink-0">
-                                  {conv.unreadCount}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Chat Area */}
-          <Card className="border-2 lg:col-span-2 flex flex-col animate-scale-in">
-            {selectedChatId && (selectedChat || selectedPlayer) ? (
-              <>
-                <CardHeader className="border-b">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-12 h-12 border-2 border-primary/20">
-                        <AvatarFallback className="bg-gradient-primary text-white">
-                          {chatHeaderName
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className="font-semibold">
-                          {chatHeaderName}
-                        </h3>
-                        <p className="text-sm text-muted-foreground capitalize">
-                          {chatHeaderSport}
-                        </p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="w-5 h-5" />
-                    </Button>
                   </div>
-                </CardHeader>
+                </div>
 
-                <CardContent className="flex-1 overflow-y-auto p-4 bg-background">
-                  {isLoadingMessages && (
-                    <p className="text-center">Loading messages...</p>
-                  )}
-
-                  {(!messages || messages.length === 0) && !isLoadingMessages && (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                      <MessageCircle className="w-12 h-12 mb-3" />
-                      <p className="text-sm">No messages yet. Say hello! 👋</p>
+                <div className="flex-1 overflow-y-auto px-4 py-4 bg-background" aria-live="polite">
+                  {isLoadingMessages ? (
+                    <div className="space-y-3">
+                      <Skeleton className="h-10 w-1/2" />
+                      <Skeleton className="h-10 w-1/3 ml-auto" />
                     </div>
-                  )}
-
-                  <div className="flex flex-col w-full space-y-3">
-                    {messages?.map((msg) => {
-                      const isSent = String(msg.sender) === String(user?.id);
-
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex w-full ${
-                            isSent ? "justify-end" : "justify-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[75%] p-3 rounded-2xl ${
-                              isSent
-                                ? "bg-primary text-white rounded-br-none"
-                                : "bg-muted text-foreground rounded-bl-none"
-                            }`}
-                          >
-                            <p className="text-sm leading-snug break-words">
+                  ) : !messages || messages.length === 0 ? (
+                    <p className="h-full grid place-items-center text-sm text-muted-foreground text-center">
+                      No messages yet. Say hi and suggest a time to play.
+                    </p>
+                  ) : (
+                    <ol className="flex flex-col gap-2">
+                      {messages.map((msg, index) => {
+                        const isSent = String(msg.sender) === String(user?.id);
+                        const lastSent = isSent && !messages.slice(index + 1).some((m) => m.sender === msg.sender);
+                        return (
+                          <li key={msg.id} className={cn("flex flex-col max-w-[80%] sm:max-w-[65%]", isSent ? "self-end items-end" : "self-start items-start")}>
+                            <p
+                              className={cn(
+                                "px-3 py-2 rounded-lg text-sm leading-snug break-words whitespace-pre-line",
+                                isSent ? "bg-primary text-primary-foreground" : "bg-card border border-border",
+                                msg.pending && "opacity-60"
+                              )}
+                            >
                               {msg.content}
                             </p>
-                            <p
-                              className={`text-xs mt-1 ${
-                                isSent
-                                  ? "text-white/70 text-right"
-                                  : "text-muted-foreground text-left"
-                              }`}
-                            >
-                              {formatDistanceToNow(new Date(msg.createdAt), {
-                                addSuffix: true,
-                              })}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={messagesEndRef} />
-                  </div>
-                </CardContent>
-
-                <div className="border-t p-4">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="text"
-                      placeholder="Type a message..."
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && handleSend()}
-                      className="flex-1"
-                      disabled={sendMessageMutation.isPending}
-                    />
-                    <Button
-                      className="bg-gradient-primary"
-                      size="icon"
-                      onClick={handleSend}
-                      disabled={sendMessageMutation.isPending}
-                    >
-                      {sendMessageMutation.isPending ? (
-                        <Clock className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Send className="w-5 h-5" />
-                      )}
-                    </Button>
-                  </div>
+                            <span className="mt-1 text-xs text-muted-foreground">
+                              {msg.pending ? (
+                                "Sending…"
+                              ) : (
+                                <>
+                                  <time dateTime={msg.createdAt}>{timeAgo(msg.createdAt)}</time>
+                                  {lastSent && msg.status === "read" && <span>, read</span>}
+                                </>
+                              )}
+                            </span>
+                          </li>
+                        );
+                      })}
+                      <li ref={messagesEndRef} aria-hidden />
+                    </ol>
+                  )}
                 </div>
+
+                <form
+                  className="flex items-center gap-2 p-3 border-t border-border"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSend();
+                  }}
+                >
+                  <Input
+                    type="text"
+                    placeholder={`Message ${chatHeaderName.split(" ")[0]}`}
+                    aria-label="Message"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    className="flex-1"
+                    maxLength={2000}
+                  />
+                  <Button type="submit" disabled={!message.trim()}>
+                    <Send />
+                    <span className="sr-only sm:not-sr-only">Send</span>
+                  </Button>
+                </form>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-                <MessageCircle className="w-16 h-16 mb-4" />
-                <h3 className="text-xl font-semibold">Select a chat</h3>
-                <p className="mb-4">Or start a new conversation with a fellow student.</p>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowNewChat(true)}
-                  className="gap-2"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  New Conversation
-                </Button>
+              <div className="flex-1 grid place-items-center p-6 text-center">
+                <div>
+                  <p className="text-muted-foreground">Pick a chat, or start one with someone you'd like to play with.</p>
+                  <Button variant="outline" className="mt-4" onClick={() => setShowNewChat(true)}>
+                    Start a chat
+                  </Button>
+                </div>
               </div>
             )}
-          </Card>
+          </section>
         </div>
       </main>
     </div>

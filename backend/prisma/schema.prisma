@@ -19,10 +19,9 @@ enum MessageStatus {
   unsent
 }
 
+// A room is either bookable or closed by staff; who has it when lives in RoomBooking
 enum RoomStatus {
   available
-  occupied
-  reserved
   maintenance
 }
 
@@ -32,12 +31,47 @@ enum TicketStatus {
   closed
 }
 
+enum TicketKind {
+  broken
+  request
+}
+
+enum TicketEventType {
+  created
+  status_changed
+  comment
+}
+
+enum NotificationType {
+  reservation_expiring
+  reservation_expired
+  due_soon
+  overdue
+  ticket_updated
+  ticket_reply
+  announcement
+  room_booking_soon
+  room_booking_cancelled
+}
+
 model Admin {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
+  // Shown on history, loans and ticket replies so students and staff can see who acted
+  name         String?
+  password     String?
   refreshToken String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  // Relations
+  loansIssued           Loan[]             @relation("LoanIssuedBy")
+  loansReturned         Loan[]             @relation("LoanReturnedTo")
+  equipmentChanges      EquipmentHistory[]
+  ticketEvents          TicketEvent[]
+  announcements         Announcement[]
+  roomBookingsCancelled RoomBooking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model User {
@@ -61,10 +95,14 @@ model User {
   games              UserGameRating[]
   messagesSent       Message[]          @relation("MessagesSent")
   messagesReceived   Message[]          @relation("MessagesReceived")
-  equipments         Equipment[]
+  equipments         Equipment[]        @relation("EquipmentHolder")
+  reservations       Equipment[]        @relation("EquipmentReservations")
   equipmentHistories EquipmentHistory[]
-  bookedRooms        Room[]
   tickets            Ticket[]
+  ticketEvents       TicketEvent[]
+  loans              Loan[]
+  notifications      Notification[]
+  roomBookings       RoomBooking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -94,39 +132,52 @@ model Game {
 }
 
 model Announcement {
-  id        String   @id @default(cuid())
-  heading   String
-  content   String
-  footer    String   @default("")
-  expireAt  DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  heading     String
+  content     String
+  footer      String   @default("")
+  expireAt    DateTime
+  createdById String?
+  createdBy   Admin?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Equipment {
   id       String          @id @default(cuid())
   name     String          @unique
   status   EquipmentStatus @default(available)
+  // While the item is out: who has it and when it's due back. The full record is the open Loan.
   roll_no  String?
-  duration String?
+  issuedAt DateTime?
+  dueAt    DateTime?
+
+  // A student can hold a free item for a short time; the desk then lends it to them.
+  // The hold is only live while reservedUntil is in the future; a job clears expired holds.
+  reservedById          String?
+  reservedBy            User?     @relation("EquipmentReservations", fields: [reservedById], references: [id], onDelete: SetNull)
+  reservedUntil         DateTime?
+  reservationRemindedAt DateTime?
 
   // Relations
   userId  String?
-  user    User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user    User?              @relation("EquipmentHolder", fields: [userId], references: [id], onDelete: SetNull)
   games   Game[]
   history EquipmentHistory[]
   tickets Ticket[]
+  loans   Loan[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// One row per status change, recording the state the item moved INTO and which staff member did it
 model EquipmentHistory {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   status    String
   roll_no   String?
-  duration  String?
-  changedAt DateTime @default(now())
+  dueAt     DateTime?
+  changedAt DateTime  @default(now())
   expireAt  DateTime
 
   // Relations
@@ -134,9 +185,13 @@ model EquipmentHistory {
   equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
   userId      String?
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  changedById String?
+  changedBy   Admin?    @relation(fields: [changedById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([equipmentId, changedAt])
 }
 
 model Message {
@@ -155,34 +210,120 @@ model Message {
 }
 
 model Room {
-  id              String     @id @default(cuid())
-  name            String     @unique
-  capacity        Int        @default(0)
-  status          RoomStatus @default(available)
-  currentActivity String?
-  timeSlot        String?
+  id          String     @id @default(cuid())
+  name        String     @unique
+  capacity    Int        @default(0)
+  description String?
+  status      RoomStatus @default(available)
 
-  // Relations
-  bookedById String?
-  bookedBy   User?   @relation(fields: [bookedById], references: [id], onDelete: SetNull)
+  bookings RoomBooking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Ticket {
-  id      String       @id @default(cuid())
-  heading String
-  content String
-  footer  String?
-  status  TicketStatus @default(open)
-
-  // Relations
-  equipmentId String?
-  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
-  senderId    String
-  sender      User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+// A student's hold on a room for whole-hour slots. Cancelled bookings are kept for the record.
+model RoomBooking {
+  id                 String    @id @default(cuid())
+  roomId             String
+  room               Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startsAt           DateTime
+  endsAt             DateTime
+  purpose            String?
+  cancelledAt        DateTime?
+  cancelledByAdminId String?
+  cancelledByAdmin   Admin?    @relation(fields: [cancelledByAdminId], references: [id], onDelete: SetNull)
+  reminderSentAt     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([roomId, startsAt])
+  @@index([userId, startsAt])
+}
+
+// One checkout of one item. Overdue tracking, late returns and busy-time analytics all read from here.
+model Loan {
+  id                String    @id @default(cuid())
+  equipmentId       String
+  equipment         Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  userId            String?
+  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roll_no           String
+  issuedAt          DateTime  @default(now())
+  dueAt             DateTime
+  returnedAt        DateTime?
+  fromReservation   Boolean   @default(false)
+  issuedById        String?
+  issuedBy          Admin?    @relation("LoanIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  returnedToId      String?
+  returnedTo        Admin?    @relation("LoanReturnedTo", fields: [returnedToId], references: [id], onDelete: SetNull)
+  dueSoonNotifiedAt DateTime?
+  overdueNotifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([equipmentId, returnedAt])
+  @@index([roll_no, issuedAt])
+  @@index([returnedAt, dueAt])
+}
+
+model Notification {
+  id     String           @id @default(cuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   NotificationType
+  title  String
+  body   String
+  // In-app path to open, e.g. /student/tickets
+  link   String?
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Ticket {
+  id            String       @id @default(cuid())
+  kind          TicketKind   @default(broken)
+  heading       String
+  content       String
+  status        TicketStatus @default(open)
+  closedAt      DateTime?
+  // For requests for new equipment
+  requestedGame String?
+  requestedItem String?
+
+  // Relations
+  equipmentId String?
+  equipment   Equipment?    @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  senderId    String
+  sender      User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  events      TicketEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// The ticket's timeline: when it was opened, each status change, and replies from either side
+model TicketEvent {
+  id            String          @id @default(cuid())
+  ticketId      String
+  ticket        Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  type          TicketEventType
+  fromStatus    TicketStatus?
+  toStatus      TicketStatus?
+  body          String?
+  authorUserId  String?
+  authorUser    User?           @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorAdminId String?
+  authorAdmin   Admin?          @relation(fields: [authorAdminId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
 }

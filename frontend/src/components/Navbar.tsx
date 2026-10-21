@@ -1,194 +1,174 @@
-import { Button } from "@/components/ui/button";
-import { Activity, Menu, X, Sun, Moon } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { useToast } from "@/components/ui/use-toast";
+import { useCallback, useState } from "react";
+import { Link, NavLink } from "react-router-dom";
+import { Menu, X, Sun, Moon, Search } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useAuth } from "@/context/AuthContext";
+import { NotificationBell } from "@/components/NotificationBell";
+import { CommandPalette, useCommandPaletteShortcut } from "@/components/CommandPalette";
+import { cn } from "@/lib/utils";
 
-const Navbar = () => {
+const studentItems = [
+  { label: "Dashboard", href: "/student/dashboard" },
+  { label: "Rooms", href: "/student/rooms" },
+  { label: "Find players", href: "/student/players" },
+  { label: "Chat", href: "/student/chat" },
+  { label: "Tickets", href: "/student/tickets" },
+  { label: "Busy times", href: "/student/busy-times" },
+  { label: "Profile", href: "/student/profile" },
+];
+
+const adminItems = [
+  { label: "Dashboard", href: "/admin/dashboard" },
+  { label: "Lend & return", href: "/admin/lend" },
+  { label: "Equipment", href: "/admin/equipment" },
+  { label: "Rooms", href: "/admin/rooms" },
+  { label: "Tickets", href: "/admin/tickets" },
+  { label: "History", href: "/admin/history" },
+  { label: "Announcements", href: "/admin/announcements" },
+];
+
+interface NavbarProps {
+  role?: "student" | "admin";
+}
+
+// Controls on the court band: light text, a faint chalk wash on hover
+const bandButton =
+  "inline-flex items-center justify-center gap-2 h-9 rounded-md text-sm font-medium text-court-foreground transition-colors hover:bg-white/10 focus-visible:outline-line [&_svg]:size-4";
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * Top of the court band. Pages continue the band with <PageHeader>, which ends in the yellow court line.
+ */
+const Navbar = ({ role = "student" }: NavbarProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [active, setActive] = useState("Dashboard");
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const { theme, setTheme } = useTheme();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
+  const { logout } = useAuth();
+  const isDark = resolvedTheme === "dark";
+  const toggleTheme = () => setTheme(isDark ? "light" : "dark");
+  const togglePalette = useCallback((fn: (open: boolean) => boolean) => setPaletteOpen(fn), []);
+  useCommandPaletteShortcut(role === "admin" ? togglePalette : noop);
 
-  const navItems = [
-    { label: "Dashboard", href: "/student/dashboard" },
-    { label: "Equipment", href: "/student/dashboard#equipment" },
-    { label: "Find Players", href: "/student/players" },
-    { label: "Profile", href: "/student/profile" },
-    { label: "Analytics", href: "/student/analytics" },
-    { label: "Chat", href: "/student/chat" },
-    { label: "Complaints", href: "/student/complaints" },
-  ];
-
-  // highlight the active route
-  useEffect(() => {
-    const { pathname, hash } = location;
-    if (pathname === "/student/dashboard") {
-      if (hash === "#equipment") setActive("Equipment");
-      else setActive("Dashboard");
-    } else {
-      const found = navItems.find((i) => i.href === pathname);
-      if (found) setActive(found.label);
-    }
-  }, [location]);
-
-  // logout handler
-  const handleLogout = async () => {
-    try {
-      const res = await fetch("/api/v1/users/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (res.ok) {
-        localStorage.removeItem("token");
-        sessionStorage.clear();
-        toast({
-          title: "Logged out successfully!",
-          description: "See you soon 👋",
-        });
-        setTimeout(() => navigate("/"), 1000);
-      } else {
-        toast({
-          title: "Logout failed",
-          description: "Please try again later.",
-          variant: "destructive",
-        });
-      }
-    } catch (error: any) {
-      toast({
-        title: "Logout error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
+  const navItems = role === "admin" ? adminItems : studentItems;
+  const homePath = role === "admin" ? "/admin/dashboard" : "/student/dashboard";
+  // Seven tabs plus controls need xl width before the menu collapses (class names stay literal for Tailwind)
 
   return (
-    <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border transition-colors duration-300">
+    <header className="fixed top-0 inset-x-0 z-50 bg-court text-court-foreground">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-line focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-warning-foreground"
+      >
+        Skip to content
+      </a>
       <div className="container mx-auto px-4 md:px-6">
-        <div className="flex items-center justify-between h-16">
-          {/* --- LOGO --- */}
-          <div
-            onClick={() => navigate("/student/dashboard")}
-            className="flex items-center gap-2 cursor-pointer select-none"
-          >
-            <div className="w-10 h-10 rounded-lg bg-gradient-primary flex items-center justify-center shadow-glow">
-              <Activity className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-xl font-bold">Smart SAC</span>
-          </div>
+        <div className="flex items-center justify-between h-16 gap-6">
+          <Link to={homePath} className="flex items-baseline gap-2 shrink-0 focus-visible:outline-line">
+            <span className="type-display text-[1.75rem] leading-none">Smart SAC</span>
+            {role === "admin" && (
+              <span className="rounded-sm bg-line px-1.5 py-0.5 text-xs font-semibold text-warning-foreground">Staff</span>
+            )}
+          </Link>
 
-          {/* --- DESKTOP NAVIGATION --- */}
-          <div className="hidden md:flex items-center gap-8">
+          <nav className={cn("hidden items-stretch self-stretch gap-1", "xl:flex")} aria-label="Main">
             {navItems.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                className={`transition-colors font-medium ${
-                  active === item.label
-                    ? "text-primary"
-                    : "text-foreground/80 hover:text-primary"
-                }`}
+              <NavLink
+                key={item.href}
+                to={item.href}
+                end
+                className={({ isActive }) =>
+                  cn(
+                    "relative flex items-center px-3 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-line focus-visible:-outline-offset-2",
+                    "after:absolute after:inset-x-3 after:bottom-0 after:h-1 after:bg-line after:opacity-0",
+                    isActive ? "text-court-foreground after:opacity-100" : "text-court-muted hover:text-court-foreground"
+                  )
+                }
               >
                 {item.label}
-              </a>
+              </NavLink>
             ))}
-          </div>
+          </nav>
 
-          {/* --- ACTION BUTTONS (Desktop) --- */}
-          <div className="hidden md:flex items-center gap-3">
-            {/* Theme toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="transition-all"
-            >
-              {theme === "dark" ? (
-                <Sun className="w-5 h-5 text-yellow-400" />
-              ) : (
-                <Moon className="w-5 h-5 text-sky-500" />
-              )}
-            </Button>
-
-            {/* Logout */}
-            <Button
-              onClick={handleLogout}
-              className="bg-primary text-primary-foreground hover:opacity-90 transition-all"
-            >
-              Logout
-            </Button>
-          </div>
-
-          {/* --- MOBILE MENU BUTTON --- */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="md:hidden p-2 text-foreground transition-transform duration-300"
-          >
-            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
-        </div>
-
-        {/* --- MOBILE MENU --- */}
-        {isOpen && (
-          <div className="md:hidden py-4 animate-fade-in">
-            <div className="flex flex-col gap-4">
-              {navItems.map((item) => (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  className={`transition-colors py-2 font-medium ${
-                    active === item.label
-                      ? "text-primary"
-                      : "text-foreground/80 hover:text-primary"
-                  }`}
-                  onClick={() => setIsOpen(false)}
-                >
-                  {item.label}
-                </a>
-              ))}
-
-              <div className="flex flex-col gap-2 pt-4 border-t border-border">
-                {/* Theme toggle */}
-                <Button
-                  variant="ghost"
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  className="flex items-center justify-center gap-2"
-                >
-                  {theme === "dark" ? (
-                    <>
-                      <Sun className="w-4 h-4 text-yellow-400" />
-                      Light Mode
-                    </>
-                  ) : (
-                    <>
-                      <Moon className="w-4 h-4 text-sky-500" />
-                      Dark Mode
-                    </>
-                  )}
-                </Button>
-
-                {/* Logout */}
-                <Button
-                  onClick={() => {
-                    setIsOpen(false);
-                    handleLogout();
-                  }}
-                  className="w-full bg-primary text-primary-foreground hover:opacity-90"
-                >
-                  Logout
-                </Button>
-              </div>
+          <div className="flex items-center gap-1">
+            {role === "admin" && (
+              <button type="button" className={cn(bandButton, "px-3 border border-white/25")} onClick={() => setPaletteOpen(true)}>
+                <Search />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="hidden sm:inline rounded border border-white/25 px-1 text-[0.6875rem] font-sans text-court-muted">
+                  {isMac ? "⌘K" : "Ctrl K"}
+                </kbd>
+              </button>
+            )}
+            {role === "student" && <NotificationBell />}
+            <div className={cn("hidden items-center gap-1", "xl:flex")}>
+              <button
+                type="button"
+                className={cn(bandButton, "w-9")}
+                onClick={toggleTheme}
+                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {isDark ? <Sun /> : <Moon />}
+              </button>
+              <button type="button" className={cn(bandButton, "px-3 border border-white/25")} onClick={logout}>
+                Sign out
+              </button>
             </div>
+            <button
+              type="button"
+              className={cn(bandButton, "w-9", "xl:hidden")}
+              onClick={() => setIsOpen((open) => !open)}
+              aria-expanded={isOpen}
+              aria-controls="mobile-nav"
+              aria-label={isOpen ? "Close menu" : "Open menu"}
+            >
+              {isOpen ? <X /> : <Menu />}
+            </button>
           </div>
-        )}
+        </div>
       </div>
-    </nav>
+
+      {isOpen && (
+        <div id="mobile-nav" className={cn("border-t border-white/15 court-line", "xl:hidden")}>
+          <nav className="container mx-auto px-4 pt-2 pb-5 flex flex-col" aria-label="Main">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.href}
+                to={item.href}
+                end
+                onClick={() => setIsOpen(false)}
+                className={({ isActive }) =>
+                  cn("py-3 pl-3 border-l-4 text-base font-medium", isActive ? "border-line text-court-foreground" : "border-transparent text-court-muted")
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+            <div className="flex items-center gap-2 pt-4 mt-2 border-t border-white/15">
+              <button type="button" className={cn(bandButton, "px-3")} onClick={toggleTheme}>
+                {isDark ? <Sun /> : <Moon />}
+                {isDark ? "Light mode" : "Dark mode"}
+              </button>
+              <button
+                type="button"
+                className={cn(bandButton, "px-3 ml-auto border border-white/25")}
+                onClick={() => {
+                  setIsOpen(false);
+                  logout();
+                }}
+              >
+                Sign out
+              </button>
+            </div>
+          </nav>
+        </div>
+      )}
+
+      {role === "admin" && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />}
+    </header>
   );
 };
+
+const noop = () => {};
 
 export default Navbar;

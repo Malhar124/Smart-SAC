@@ -1,327 +1,114 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { registerSchema, serverFieldErrors, validate, type FieldErrors } from "@/lib/schemas";
+import AuthLayout from "@/components/AuthLayout";
+import { Field, fieldProps } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserPlus } from "lucide-react";
-import { toast as sonner } from "sonner";
+
+const empty = { fullname: "", username: "", email: "", phone_number: "", roll_no: "", password: "", confirmPassword: "" };
 
 const StudentRegister = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    fullname: "",
-    username: "",
-    email: "",
-    phone_number: "",
-    roll_no: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [step, setStep] = useState<"register" | "verify">("register");
-  const [verificationData, setVerificationData] = useState({
-    email: "",
-    token: "",
-  });
+  const [values, setValues] = useState(empty);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [pending, setPending] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.id]: e.target.value,
-    });
-  };
+  const set = (key: keyof typeof empty) => (e: React.ChangeEvent<HTMLInputElement>) => setValues({ ...values, [key]: e.target.value });
 
-  const handleVerificationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setVerificationData({
-      ...verificationData,
-      [e.target.id]: e.target.value,
-    });
-  };
-
-  const validateForm = () => {
-    // Phone number validation
-    const phoneRegex = /^\d{10}$/;
-    if (!phoneRegex.test(formData.phone_number)) {
-      sonner.error("Invalid phone number", {
-        description: "Phone number must be 10 digits"
-      });
-      return false;
-    }
-
-    // Password strength validation
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passwordRegex.test(formData.password)) {
-      sonner.error("Weak password", {
-        description: "Must be 8+ characters with uppercase, lowercase, number, and special character"
-      });
-      return false;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      sonner.error("Passwords do not match");
-      return false;
-    }
-
-    if (!formData.email.toLowerCase().endsWith('@iiita.ac.in')) {
-      sonner.error("Invalid email address", {
-        description: "Registration is only allowed with IIITA student email IDs (@iiita.ac.in)"
-      });
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
+    const result = validate(registerSchema, values);
+    setErrors(result.errors ?? {});
+    if (!result.data) return;
 
-    setIsLoading(true);
-
+    setPending(true);
     try {
-      const response = await api.post("/users/register", {
-        fullname: formData.fullname,
-        username: formData.username,
-        email: formData.email,
-        phone_number: formData.phone_number,
-        roll_no: formData.roll_no,
-        password: formData.password,
+      const { confirmPassword: _confirm, ...body } = result.data;
+      const response = await api.post<{ emailDelivered: boolean }>("/users/register", body);
+      toast.success("Account created", {
+        description: response.emailDelivered ? "Check your email for a 6-digit code." : "Enter the 6-digit code to finish.",
       });
-
-      sonner.success("Registration successful!", {
-        description: "Please check your email for verification code.",
-      });
-      
-      setVerificationData(prev => ({ ...prev, email: formData.email }));
-      setStep("verify");
-
+      navigate(`/verify-email?email=${encodeURIComponent(result.data.email)}${response.emailDelivered ? "" : "&dev=1"}`);
     } catch (error) {
-      console.error("Registration failed", error);
+      setErrors(serverFieldErrors(error));
+      toast.error(error instanceof Error ? error.message : "Couldn't create the account. Try again.");
     } finally {
-      setIsLoading(false);
+      setPending(false);
     }
   };
-
-  const handleVerification = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      await api.post("/users/verify-email", {
-        email: verificationData.email,
-        token: verificationData.token,
-      });
-
-      sonner.success("Email verified successfully!", {
-        description: "Your account has been activated.",
-      });
-      
-      navigate("/student-login");
-
-    } catch (error) {
-      console.error("Verification failed", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleResendCode = async () => {
-    setIsLoading(true);
-    try {
-      await api.post("/users/resend-verification", {
-        email: verificationData.email,
-      });
-      
-      sonner.success("Verification code sent!", {
-        description: "Check your email for the new code.",
-      });
-    } catch (error) {
-      console.error("Resend failed", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (step === "verify") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <UserPlus className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="mt-4">Verify Your Email</CardTitle>
-            <CardDescription>
-              Enter the 6-digit code sent to {verificationData.email}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleVerification} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="token">Verification Code</Label>
-                <Input
-                  id="token"
-                  value={verificationData.token}
-                  onChange={handleVerificationChange}
-                  placeholder="Enter 6-digit code"
-                  maxLength={6}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Verifying..." : "Verify Email"}
-              </Button>
-              
-              <div className="text-center">
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={handleResendCode}
-                  disabled={isLoading}
-                  className="text-sm"
-                >
-                  Didn't receive code? Resend
-                </Button>
-              </div>
-              
-              <div className="text-center text-sm">
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={() => setStep("register")}
-                  disabled={isLoading}
-                >
-                  Back to registration
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader className="text-center">
-          <UserPlus className="w-12 h-12 mx-auto text-primary" />
-          <CardTitle className="mt-4">Create Student Account</CardTitle>
-          <CardDescription>Enter your details to register</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="fullname">Full Name</Label>
-                <Input 
-                  id="fullname" 
-                  value={formData.fullname} 
-                  onChange={handleChange} 
-                  required 
-                  disabled={isLoading} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input 
-                  id="username" 
-                  value={formData.username} 
-                  onChange={handleChange} 
-                  required 
-                  disabled={isLoading} 
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input 
-                id="email" 
-                type="email" 
-                value={formData.email} 
-                onChange={handleChange} 
-                required 
-                disabled={isLoading} 
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone_number">Phone Number</Label>
-                <Input 
-                  id="phone_number" 
-                  value={formData.phone_number} 
-                  onChange={handleChange} 
-                  required 
-                  disabled={isLoading}
-                  placeholder="10 digits only"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="roll_no">Roll Number</Label>
-                <Input 
-                  id="roll_no" 
-                  value={formData.roll_no} 
-                  onChange={handleChange} 
-                  required 
-                  disabled={isLoading} 
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input 
-                  id="password" 
-                  type="password" 
-                  value={formData.password} 
-                  onChange={handleChange} 
-                  required 
-                  disabled={isLoading}
-                  placeholder="Min 8 chars with Aa1@"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <Input 
-                  id="confirmPassword" 
-                  type="password" 
-                  value={formData.confirmPassword} 
-                  onChange={handleChange} 
-                  required 
-                  disabled={isLoading} 
-                />
-              </div>
-            </div>
-            
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p>Password must contain:</p>
-              <ul className="list-disc list-inside space-y-1">
-                <li>At least 8 characters</li>
-                <li>One uppercase letter</li>
-                <li>One lowercase letter</li>
-                <li>One number</li>
-                <li>One special character (@$!%*?&)</li>
-              </ul>
-            </div>
-            
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Registering..." : "Register"}
-            </Button>
-            <div className="text-center text-sm">
-              Already have an account?{" "}
-              <Link to="/student-login" className="font-medium text-primary hover:underline">
-                Log in
-              </Link>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthLayout wide>
+      <div className="space-y-3">
+        <h1 className="type-title text-5xl">Create your account</h1>
+        <p className="text-muted-foreground">Use your @iiita.ac.in email. We'll send a code to confirm it.</p>
+      </div>
+      <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field id="fullname" label="Full name" error={errors.fullname}>
+            <Input {...fieldProps("fullname", errors.fullname)} autoComplete="name" value={values.fullname} onChange={set("fullname")} disabled={pending} />
+          </Field>
+          <Field id="username" label="Username" error={errors.username}>
+            <Input {...fieldProps("username", errors.username)} autoComplete="username" value={values.username} onChange={set("username")} disabled={pending} />
+          </Field>
+        </div>
+        <Field id="email" label="Email" error={errors.email}>
+          <Input
+            {...fieldProps("email", errors.email)}
+            type="email"
+            autoComplete="email"
+            value={values.email}
+            onChange={set("email")}
+            placeholder="iit2023001@iiita.ac.in"
+            disabled={pending}
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field id="phone_number" label="Phone number" error={errors.phone_number}>
+            <Input
+              {...fieldProps("phone_number", errors.phone_number)}
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel-national"
+              value={values.phone_number}
+              onChange={set("phone_number")}
+              placeholder="10 digits"
+              disabled={pending}
+            />
+          </Field>
+          <Field id="roll_no" label="Roll number" error={errors.roll_no}>
+            <Input {...fieldProps("roll_no", errors.roll_no)} value={values.roll_no} onChange={set("roll_no")} placeholder="IIT2023001" disabled={pending} />
+          </Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field id="password" label="Password" error={errors.password} hint="8+ characters with upper and lower case, a number and one of @ $ ! % * ? &">
+            <Input {...fieldProps("password", errors.password, true)} type="password" autoComplete="new-password" value={values.password} onChange={set("password")} disabled={pending} />
+          </Field>
+          <Field id="confirmPassword" label="Password again" error={errors.confirmPassword}>
+            <Input
+              {...fieldProps("confirmPassword", errors.confirmPassword)}
+              type="password"
+              autoComplete="new-password"
+              value={values.confirmPassword}
+              onChange={set("confirmPassword")}
+              disabled={pending}
+            />
+          </Field>
+        </div>
+        <Button type="submit" className="w-full" disabled={pending}>
+          {pending ? "Creating account…" : "Create account"}
+        </Button>
+        <p className="text-center text-sm">
+          Already have an account?{" "}
+          <Link to="/student-login" className="font-medium text-primary hover:underline">
+            Sign in
+          </Link>
+        </p>
+      </form>
+    </AuthLayout>
   );
 };
 

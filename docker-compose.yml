@@ -1,0 +1,65 @@
+# The whole Smart SAC stack: `docker compose up --build`, then open http://localhost:8080
+#
+# For day-to-day development use backend/docker-compose.yml (just PostgreSQL) with `npm run dev`
+# in backend/ and frontend/. This stack uses its own database volume, so it never touches that one.
+
+name: smart-sac-stack
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smartsac
+      POSTGRES_PASSWORD: smartsac
+      POSTGRES_DB: smart_sac
+    volumes:
+      - stack-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartsac -d smart_sac"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      DATABASE_URL: postgresql://smartsac:smartsac@postgres:5432/smart_sac?schema=public
+      CORS_ORIGIN: http://localhost:8080
+      TRUST_PROXY: "true"
+      # The browser talks to nginx on one origin, so first-party cookies work over plain http://localhost.
+      # Behind HTTPS, set COOKIE_SECURE=true.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: lax
+      # Override these in a .env file next to this one for anything beyond a local demo
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-local-demo-access-secret-change-me-0123456789}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-local-demo-refresh-secret-change-me-0123456789}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-desk@iiita.ac.in}
+      SMTP_HOST: ${SMTP_HOST:-}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+      SPORTS_HEAD_EMAIL: ${SPORTS_HEAD_EMAIL:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kolkata}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # Fill a fresh database with demo data (skipped if it already has accounts)
+      SEED_DEMO: ${SEED_DEMO:-true}
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api/v1
+        VITE_APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kolkata}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+volumes:
+  stack-pgdata:

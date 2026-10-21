@@ -1,98 +1,98 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
-import { Link, useNavigate } from "react-router-dom"; // Import Link
+import { api, isApiError } from "@/lib/api";
+import { serverFieldErrors, studentLoginSchema, validate, type FieldErrors } from "@/lib/schemas";
+import AuthLayout from "@/components/AuthLayout";
+import { Field, fieldProps } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity } from "lucide-react";
-import { toast as sonner } from "sonner";
 
 const StudentLogin = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const { login } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const [values, setValues] = useState({ email: "", password: "" });
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    const result = validate(studentLoginSchema, values);
+    setErrors(result.errors ?? {});
+    if (!result.data) return;
 
-    if (email.includes('@') && !email.toLowerCase().endsWith('@iiita.ac.in')) {
-      sonner.error("Invalid email address", {
-        description: "Login is only allowed with IIITA student email IDs (@iiita.ac.in)"
-      });
-      return;
-    }
-
-    setIsLoading(true);
+    setPending(true);
     try {
-      await login('student', { email, password });
-      // Navigation happens inside the context on success
+      await login("student", result.data);
+      toast.success("Signed in");
     } catch (error) {
-      console.error("Login failed", error);
-      setIsLoading(false);
+      if (isApiError(error) && error.code === "EMAIL_NOT_VERIFIED") {
+        // Send a fresh code and take them to the confirm step
+        const email = String(error.errors.find((x) => x.code)?.email ?? values.email);
+        await api.post("/users/resend-verification-email", { email }).catch(() => undefined);
+        toast.info("Confirm your email first", { description: "We sent you a new code." });
+        navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+        return;
+      }
+      setErrors(serverFieldErrors(error));
+      setFormError(error instanceof Error ? error.message : "Couldn't sign in. Try again.");
+    } finally {
+      setPending(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <Activity className="w-12 h-12 mx-auto text-primary" />
-          <CardTitle className="mt-4">Student Login</CardTitle>
-          <CardDescription>Enter your credentials to access your dashboard</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email or Username</Label>
-              <Input
-                id="email"
-                type="text"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="aniket@college.edu"
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                disabled={isLoading}
-              />
-            </div>
-            {/* --- ADDED THIS LINK --- */}
-            <div className="flex justify-end text-sm">
-              <Link
-                to="/forgot-password"
-                className="font-medium text-primary hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Logging in..." : "Login"}
-            </Button>
-            {/* --- ADDED THIS LINK --- */}
-            <div className="text-center text-sm">
-              Don't have an account?{" "}
-              <Link
-                to="/student-register"
-                className="font-medium text-primary hover:underline"
-              >
-                Sign up
-              </Link>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthLayout>
+      <div className="space-y-3">
+        <h1 className="type-title text-5xl">Sign in</h1>
+        <p className="text-muted-foreground">Use your @iiita.ac.in email or your username.</p>
+      </div>
+      <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
+        {formError && (
+          <p className="border-l-4 border-destructive bg-destructive/10 rounded-r-md px-3 py-2 text-sm" role="alert">
+            {formError}
+          </p>
+        )}
+        <Field id="email" label="Email or username" error={errors.email}>
+          <Input
+            {...fieldProps("email", errors.email)}
+            autoComplete="username"
+            value={values.email}
+            onChange={(e) => setValues({ ...values, email: e.target.value })}
+            placeholder="you@iiita.ac.in"
+            disabled={pending}
+            autoFocus
+          />
+        </Field>
+        <Field id="password" label="Password" error={errors.password}>
+          <Input
+            {...fieldProps("password", errors.password)}
+            type="password"
+            autoComplete="current-password"
+            value={values.password}
+            onChange={(e) => setValues({ ...values, password: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <div className="flex justify-end text-sm">
+          <Link to="/forgot-password" className="font-medium text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
+        <Button type="submit" className="w-full" disabled={pending}>
+          {pending ? "Signing in…" : "Sign in"}
+        </Button>
+        <p className="text-center text-sm">
+          New to Smart SAC?{" "}
+          <Link to="/student-register" className="font-medium text-primary hover:underline">
+            Create an account
+          </Link>
+        </p>
+      </form>
+    </AuthLayout>
   );
 };
 

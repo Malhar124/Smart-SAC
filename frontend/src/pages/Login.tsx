@@ -1,110 +1,59 @@
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { UserCircle, Shield, Activity } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import CourtDiagram from "@/components/CourtDiagram";
+import { useAuth } from "@/context/AuthContext";
 
 const Login = () => {
-  const navigate = useNavigate();
+  const { authType, isLoading } = useAuth();
+  const dashboardPath = authType === "admin" ? "/admin/dashboard" : "/student/dashboard";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl">
-        {/* Header */}
-        <div className="text-center mb-12 animate-fade-in">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-elegant">
-              <Activity className="w-10 h-10 text-white" />
-            </div>
+    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* Court panel: a landscape band on small screens, a full-height column on large ones */}
+      <div className="bg-court flex items-center justify-center px-6 py-8 lg:order-2 lg:py-12">
+        <CourtDiagram orientation="landscape" className="w-full max-w-sm lg:hidden" />
+        <CourtDiagram orientation="portrait" className="hidden lg:block h-[min(78vh,640px)] w-auto" />
+      </div>
+
+      <main id="main" className="flex flex-col justify-between px-6 py-10 sm:px-12 lg:px-16 lg:py-14">
+        <div className="max-w-md my-auto">
+          <h1 className="type-display text-6xl sm:text-7xl text-foreground">Smart SAC</h1>
+
+          <p className="mt-6 text-lg text-muted-foreground max-w-[34ch]">
+            The equipment counter at IIIT Allahabad's Student Activity Center, online. Check
+            what's free before you walk over, see who has the rest, and find someone to play
+            with.
+          </p>
+
+          <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
+            {!isLoading && authType ? (
+              <Button asChild size="lg">
+                <Link to={dashboardPath}>Go to your dashboard</Link>
+              </Button>
+            ) : (
+              <>
+                <Button asChild size="lg">
+                  <Link to="/student-login">Sign in</Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link to="/student-register">Create an account</Link>
+                </Button>
+              </>
+            )}
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-primary bg-clip-text text-transparent">
-            Smart SAC
-          </h1>
-          <p className="text-xl text-muted-foreground">
-            Student Activity Center Management System
+
+          <p className="mt-4 text-sm text-muted-foreground">
+            Use your @iiita.ac.in email to create an account.
           </p>
         </div>
 
-        {/* Role Selection Cards */}
-        <div className="grid md:grid-cols-2 gap-6 animate-scale-in">
-          {/* Student Login Card */}
-          <Card 
-            className="group relative overflow-hidden border-2 hover:border-primary/50 transition-all duration-300 hover:shadow-xl hover:-translate-y-2 cursor-pointer"
-            onClick={() => navigate('/student-login')}
-          >
-            <div className="absolute inset-0 bg-gradient-primary opacity-0 group-hover:opacity-5 transition-opacity" />
-            <div className="p-8 text-center">
-              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <UserCircle className="w-12 h-12 text-primary" />
-              </div>
-              <h2 className="text-2xl font-bold mb-3">Student Login</h2>
-              <p className="text-muted-foreground mb-6">
-                Access your profile, book equipment, find players, and track your activity
-              </p>
-              <ul className="text-sm text-left space-y-2 mb-6">
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span>View equipment availability</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span>Find and connect with players</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span>Track your sports activity</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span>Chat with other students</span>
-                </li>
-              </ul>
-              <Button className="w-full bg-gradient-primary group-hover:shadow-lg transition-shadow">
-                Continue as Student
-              </Button>
-            </div>
-          </Card>
-
-          {/* Admin Login Card */}
-{/* Admin Login Card */}
-<Card 
-  className="group relative overflow-hidden border-2 hover:border-primary/50 transition-all duration-300 hover:shadow-xl hover:-translate-y-2 cursor-pointer"
-  onClick={() => navigate('/admin/login')} // ✅ FIXED ROUTE
->
-  <div className="absolute inset-0 bg-gradient-primary opacity-0 group-hover:opacity-5 transition-opacity" />
-  <div className="p-8 text-center">
-    <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-      <Shield className="w-12 h-12 text-primary" />
-    </div>
-    <h2 className="text-2xl font-bold mb-3">Admin Login</h2>
-    <p className="text-muted-foreground mb-6">
-      Manage equipment checkouts, track usage, and maintain records
-    </p>
-    <ul className="text-sm text-left space-y-2 mb-6">
-      <li className="flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-        <span>Check out equipment to students</span>
-      </li>
-      <li className="flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-        <span>Manage equipment returns</span>
-      </li>
-      <li className="flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-        <span>View usage history</span>
-      </li>
-      <li className="flex items-center gap-2">
-        <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-        <span>Track equipment status</span>
-      </li>
-    </ul>
-    <Button className="w-full bg-gradient-primary group-hover:shadow-lg transition-shadow">
-      Continue as Admin
-    </Button>
-  </div>
-</Card>
-
-        </div>
-      </div>
+        <p className="mt-12 text-sm text-muted-foreground">
+          Work at the SAC desk?{" "}
+          <Link to="/admin/login" className="font-medium text-foreground underline underline-offset-4 hover:text-primary">
+            Staff sign in
+          </Link>
+        </p>
+      </main>
     </div>
   );
 };

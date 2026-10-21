@@ -1,166 +1,109 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { email as emailRule, otp, serverFieldErrors, validate, type FieldErrors } from "@/lib/schemas";
+import { z } from "zod";
+import AuthLayout from "@/components/AuthLayout";
+import { Field, fieldProps } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mail, ArrowLeft } from "lucide-react";
-import { toast as sonner } from "sonner";
+
+const schema = z.object({ email: emailRule, token: otp });
+const RESEND_COOLDOWN = 60;
 
 const EmailVerification = () => {
+  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    token: "",
-  });
-  const [countdown, setCountdown] = useState(0);
+  const [values, setValues] = useState({ email: params.get("email") ?? "", token: "" });
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [pending, setPending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const devFallback = params.get("dev") === "1";
 
   useEffect(() => {
-    // Get email from location state (if coming from registration)
-    if (location.state?.email) {
-      setFormData(prev => ({ ...prev, email: location.state.email }));
-    }
-  }, [location.state]);
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
-  useEffect(() => {
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [countdown]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.id]: e.target.value,
-    });
-  };
-
-  const handleVerification = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-
+    const result = validate(schema, values);
+    setErrors(result.errors ?? {});
+    if (!result.data) return;
+    setPending(true);
     try {
-      await api.post("/users/verify-email", {
-        email: formData.email,
-        token: formData.token,
-      });
-
-      sonner.success("Email verified successfully!", {
-        description: "Your account has been activated. You can now login.",
-      });
-      
-      navigate("/student-login");
-
+      await api.post("/users/verify-email", result.data);
+      toast.success("Email confirmed", { description: "Sign in to get started." });
+      navigate("/student-login", { replace: true });
     } catch (error) {
-      console.error("Verification failed", error);
+      setErrors({ token: error instanceof Error ? error.message : "That code didn't work.", ...serverFieldErrors(error) });
     } finally {
-      setIsLoading(false);
+      setPending(false);
     }
   };
 
-  const handleResendCode = async () => {
-    if (countdown > 0) return;
-
-    setIsLoading(true);
+  const resend = async () => {
+    const result = validate(z.object({ email: emailRule }), { email: values.email });
+    if (!result.data) {
+      setErrors(result.errors ?? {});
+      return;
+    }
     try {
-      await api.post("/users/resend-verification", {
-        email: formData.email,
-      });
-      
-      sonner.success("Verification code sent!", {
-        description: "Check your email for the new code.",
-      });
-      
-      setCountdown(60); // 60 seconds cooldown
+      await api.post("/users/resend-verification-email", result.data);
+      toast.success("New code sent", { description: "Check your email. Codes last 24 hours." });
+      setCooldown(RESEND_COOLDOWN);
     } catch (error) {
-      console.error("Resend failed", error);
-    } finally {
-      setIsLoading(false);
+      toast.error(error instanceof Error ? error.message : "Couldn't send a new code.");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <Mail className="w-12 h-12 mx-auto text-primary" />
-          <CardTitle className="mt-4">Verify Your Email</CardTitle>
-          <CardDescription>
-            {formData.email 
-              ? `Enter the 6-digit code sent to ${formData.email}`
-              : "Enter your email and verification code"
-            }
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleVerification} className="space-y-4">
-            {!formData.email && (
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="Enter your email"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-            )}
-            
-            <div className="space-y-2">
-              <Label htmlFor="token">Verification Code</Label>
-              <Input
-                id="token"
-                value={formData.token}
-                onChange={handleChange}
-                placeholder="Enter 6-digit code"
-                maxLength={6}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Verifying..." : "Verify Email"}
-            </Button>
-            
-            <div className="text-center">
-              <Button
-                type="button"
-                variant="link"
-                onClick={handleResendCode}
-                disabled={isLoading || countdown > 0}
-                className="text-sm"
-              >
-                {countdown > 0 
-                  ? `Resend code in ${countdown}s` 
-                  : "Didn't receive code? Resend"
-                }
-              </Button>
-            </div>
-            
-            <div className="text-center text-sm">
-              <Button
-                type="button"
-                variant="link"
-                onClick={() => navigate("/student-register")}
-                disabled={isLoading}
-                className="flex items-center gap-2 mx-auto"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back to registration
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthLayout>
+      <div className="space-y-3">
+        <h1 className="type-title text-5xl">Check your email</h1>
+        <p className="text-muted-foreground">
+          {values.email ? `Enter the 6-digit code we sent to ${values.email}.` : "Enter your email and the 6-digit code we sent you."}
+        </p>
+        {(devFallback || import.meta.env.DEV) && (
+          <p className="text-sm text-muted-foreground border-l-4 border-line pl-3">
+            Running locally? If email isn't set up, the code is printed in the backend terminal.
+          </p>
+        )}
+      </div>
+      <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
+        {!params.get("email") && (
+          <Field id="email" label="Email" error={errors.email}>
+            <Input {...fieldProps("email", errors.email)} type="email" autoComplete="email" value={values.email} onChange={(e) => setValues({ ...values, email: e.target.value })} />
+          </Field>
+        )}
+        <Field id="token" label="Code" error={errors.token}>
+          <Input
+            {...fieldProps("token", errors.token)}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={values.token}
+            onChange={(e) => setValues({ ...values, token: e.target.value.replace(/\D/g, "") })}
+            placeholder="123456"
+            className="tabular tracking-[0.3em] text-lg"
+            autoFocus
+          />
+        </Field>
+        <Button type="submit" className="w-full" disabled={pending}>
+          {pending ? "Confirming…" : "Confirm email"}
+        </Button>
+        <div className="flex items-center justify-between text-sm">
+          <Button type="button" variant="link" className="h-auto p-0" onClick={resend} disabled={cooldown > 0}>
+            {cooldown > 0 ? `Send a new code in ${cooldown}s` : "Send a new code"}
+          </Button>
+          <Link to="/student-login" className="text-muted-foreground hover:text-foreground">
+            Back to sign in
+          </Link>
+        </div>
+      </form>
+    </AuthLayout>
   );
 };
 

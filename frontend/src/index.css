@@ -2,105 +2,130 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/*
+  Smart SAC design tokens. Colours are HSL channels (consumed as hsl(var(--x))).
+
+  The palette comes from an indoor court:
+    court  #1F5E4B  synthetic court green: brand, primary actions, active state
+    line   #E9B91C  court-line yellow: the court drawing and "in use" status only
+    clay   #B5452F  broken equipment, destructive actions
+    floor  #EEF1EC  page background (cool, not cream)
+    chalk  #FFFFFF  surfaces that sit on the floor (tags, inputs)
+    ink    #142019  text
+
+  The court-green band (nav + page title, closed by a yellow court line) is the one
+  bold element; everything below it stays quiet.
 */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 215 25% 15%;
+    --background: 96 13% 94%;
+    --foreground: 150 22% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 215 25% 15%;
+    --card-foreground: 158 19% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 15%;
+    --popover-foreground: 158 19% 12%;
 
-    --primary: 195 92% 48%;
+    --primary: 162 50% 25%;
     --primary-foreground: 0 0% 100%;
-    --primary-glow: 195 92% 65%;
+    --primary-glow: 162 50% 25%;
 
-    --secondary: 160 70% 55%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 135 10% 92%;
+    --secondary-foreground: 158 19% 12%;
 
-    --muted: 210 20% 96%;
-    --muted-foreground: 215 15% 50%;
+    --muted: 135 10% 92%;
+    --muted-foreground: 152 7% 38%;
 
-    --accent: 195 100% 40%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 150 20% 90%;
+    --accent-foreground: 158 19% 12%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 10 59% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 143 49% 35%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 46 82% 51%;
+    --warning-foreground: 158 19% 12%;
 
-    --border: 214 20% 90%;
-    --input: 214 20% 90%;
-    --ring: 195 92% 48%;
+    --line: 46 82% 51%;
+    /* The court surface stays deep green in both themes */
+    --court: 162 50% 25%;
+    --court-foreground: 0 0% 100%;
+    /* Court-line yellow lightened for small text on the court (4.5:1 or better) */
+    --court-line-text: 46 90% 64%;
+    /* Secondary text on the court band */
+    --court-muted: 150 30% 78%;
 
-    --radius: 0.75rem;
+    --border: 140 9% 87%;
+    --input: 140 9% 80%;
+    --ring: 162 50% 25%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(195 92% 48%), hsl(195 92% 65%));
-    --gradient-secondary: linear-gradient(135deg, hsl(160 70% 55%), hsl(195 92% 48%));
-    --gradient-hero: linear-gradient(135deg, hsl(195 92% 48%) 0%, hsl(160 70% 55%) 100%);
-    
-    --shadow-sm: 0 1px 2px 0 hsl(215 25% 15% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(215 25% 15% / 0.1);
-    --shadow-lg: 0 10px 20px -5px hsl(195 92% 48% / 0.2);
-    --shadow-glow: 0 0 30px hsl(195 92% 65% / 0.3);
+    --radius: 0.375rem;
 
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Legacy gradient tokens: kept so existing classes render, but as flat court green */
+    --gradient-primary: linear-gradient(hsl(162 50% 25%), hsl(162 50% 25%));
+    --gradient-secondary: linear-gradient(hsl(162 50% 25%), hsl(162 50% 25%));
+    --gradient-hero: linear-gradient(hsl(162 50% 25%), hsl(162 50% 25%));
+
+    --shadow-sm: 0 1px 2px 0 hsl(158 19% 12% / 0.06);
+    --shadow-md: 0 1px 3px 0 hsl(158 19% 12% / 0.08);
+    --shadow-lg: 0 4px 12px -2px hsl(158 19% 12% / 0.1);
+    --shadow-glow: none;
   }
 
   .dark {
-    --background: 215 30% 8%;
-    --foreground: 210 20% 95%;
+    --background: 154 19% 7%;
+    --foreground: 146 15% 91%;
 
-    --card: 215 25% 12%;
-    --card-foreground: 210 20% 95%;
+    --card: 156 18% 11%;
+    --card-foreground: 146 15% 91%;
 
-    --popover: 215 25% 12%;
-    --popover-foreground: 210 20% 95%;
+    --popover: 156 18% 11%;
+    --popover-foreground: 146 15% 91%;
 
-    --primary: 195 92% 55%;
-    --primary-foreground: 0 0% 100%;
-    --primary-glow: 195 92% 70%;
+    --primary: 156 40% 51%;
+    --primary-foreground: 154 19% 7%;
+    --primary-glow: 156 40% 51%;
 
-    --secondary: 160 70% 50%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 155 17% 14%;
+    --secondary-foreground: 146 15% 91%;
 
-    --muted: 215 20% 18%;
-    --muted-foreground: 215 10% 65%;
+    --muted: 155 17% 14%;
+    --muted-foreground: 152 8% 61%;
 
-    --accent: 195 100% 45%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 155 15% 17%;
+    --accent-foreground: 146 15% 91%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 10 68% 62%;
+    --destructive-foreground: 154 19% 7%;
 
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
+    --success: 145 41% 50%;
+    --success-foreground: 154 19% 7%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 46 82% 57%;
+    --warning-foreground: 154 19% 7%;
 
-    --border: 215 20% 20%;
-    --input: 215 20% 20%;
-    --ring: 195 92% 55%;
+    --line: 46 82% 57%;
+    --court: 162 48% 17%;
+    --court-foreground: 146 15% 94%;
+    --court-line-text: 46 82% 57%;
+    --court-muted: 150 22% 70%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(195 92% 55%), hsl(195 92% 70%));
-    --gradient-secondary: linear-gradient(135deg, hsl(160 70% 50%), hsl(195 92% 55%));
-    --gradient-hero: linear-gradient(135deg, hsl(195 92% 55%) 0%, hsl(160 70% 50%) 100%);
-    
+    --border: 155 12% 19%;
+    --input: 155 12% 25%;
+    --ring: 156 40% 51%;
+
+    --gradient-primary: linear-gradient(hsl(156 40% 51%), hsl(156 40% 51%));
+    --gradient-secondary: linear-gradient(hsl(156 40% 51%), hsl(156 40% 51%));
+    --gradient-hero: linear-gradient(hsl(156 40% 51%), hsl(156 40% 51%));
+
     --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.3);
-    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.4);
-    --shadow-lg: 0 10px 20px -5px hsl(195 92% 55% / 0.3);
-    --shadow-glow: 0 0 30px hsl(195 92% 70% / 0.4);
+    --shadow-md: 0 1px 3px 0 hsl(0 0% 0% / 0.35);
+    --shadow-lg: 0 4px 12px -2px hsl(0 0% 0% / 0.4);
+    --shadow-glow: none;
   }
 }
 
@@ -109,7 +134,68 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Big Shoulders Display: stadium signage. Wordmark and page titles */
+  .type-display {
+    font-family: theme("fontFamily.display");
+    font-weight: 900;
+    letter-spacing: 0.005em;
+    line-height: 0.9;
+  }
+
+  .type-title {
+    font-family: theme("fontFamily.display");
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 0.95;
+  }
+
+  /* Section headings inside a page: condensed Archivo, quieter than the band */
+  .type-heading {
+    font-stretch: 85%;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The yellow court line that closes the court band */
+  .court-line {
+    box-shadow: inset 0 -4px 0 0 hsl(var(--line));
   }
 }

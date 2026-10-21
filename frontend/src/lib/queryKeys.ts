@@ -1,0 +1,40 @@
+// One place for React Query keys, so live events can invalidate exactly what changed.
+export const qk = {
+  me: ["me"] as const,
+  studentDashboard: ["studentDashboard"] as const,
+  staffDashboard: ["staffDashboard"] as const,
+  staffEquipment: ["staffEquipment"] as const,
+  staffGames: ["staffGames"] as const,
+  studentSummary: (rollNo: string) => ["studentSummary", rollNo] as const,
+  studentSummaryAll: ["studentSummary"] as const,
+  games: ["games"] as const,
+  players: ["players"] as const,
+  conversations: ["conversations"] as const,
+  messages: (otherUserId: string) => ["messages", otherUserId] as const,
+  messagesAll: ["messages"] as const,
+  myTickets: ["myTickets"] as const,
+  ticket: (id: string) => ["ticket", id] as const,
+  ticketAll: ["ticket"] as const,
+  staffTickets: ["staffTickets"] as const,
+  rooms: ["rooms"] as const,
+  myRoomBookings: ["myRoomBookings"] as const,
+  notifications: ["notifications"] as const,
+  announcements: ["announcements"] as const,
+  staffAnnouncements: ["staffAnnouncements"] as const,
+  usage: ["usage"] as const,
+  recentHistory: ["recentHistory"] as const,
+  historyOverview: ["historyOverview"] as const,
+  itemHistory: ["itemHistory"] as const,
+};
+
+/** Which queries each live event makes stale */
+export const invalidationsFor: Record<string, readonly (readonly string[])[]> = {
+  "equipment.changed": [qk.studentDashboard, qk.staffDashboard, qk.staffEquipment, qk.staffGames, qk.me, qk.studentSummaryAll, qk.recentHistory, qk.historyOverview, qk.itemHistory],
+  "room.changed": [qk.rooms, qk.myRoomBookings, qk.me],
+  "ticket.changed": [qk.myTickets, qk.ticketAll, qk.staffTickets, qk.staffDashboard, qk.studentDashboard],
+  "message.new": [qk.conversations, qk.messagesAll, qk.studentDashboard],
+  "message.read": [qk.conversations, qk.studentDashboard],
+  "notification.new": [qk.notifications, qk.studentDashboard],
+  "notification.read": [qk.notifications, qk.studentDashboard],
+  "announcement.changed": [qk.announcements, qk.staffAnnouncements, qk.studentDashboard, qk.staffDashboard],
+};

@@ -1,23 +1,25 @@
-import { useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 
 const NotFound = () => {
   const location = useLocation();
 
-  useEffect(() => {
-    console.error("404 Error: User attempted to access non-existent route:", location.pathname);
-  }, [location.pathname]);
-
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">404</h1>
-        <p className="mb-4 text-xl text-gray-600">Oops! Page not found</p>
-        <a href="/" className="text-blue-500 underline hover:text-blue-700">
-          Return to Home
-        </a>
+    <main id="main" className="min-h-screen bg-background flex items-center px-6 sm:px-12 lg:px-16">
+      <div className="max-w-md">
+        <p className="type-display text-8xl text-line" aria-hidden>
+          Out
+        </p>
+        <h1 className="mt-4 type-title text-3xl">There's no page here</h1>
+        <p className="mt-3 text-muted-foreground">
+          Nothing lives at <code className="text-foreground break-all">{location.pathname}</code>. The link may be old or
+          mistyped.
+        </p>
+        <Button asChild className="mt-8">
+          <Link to="/">Back to Smart SAC</Link>
+        </Button>
       </div>
-    </div>
+    </main>
   );
 };
 

@@ -1,367 +1,152 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Search } from "lucide-react";
+import { api, qs } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { formatClock, formatDayClock, normalizeStatus } from "@/lib/format";
+import type { EquipmentStatus, HistoryEntry, Paged } from "@/lib/types";
+import Navbar from "@/components/Navbar";
+import PageHeader from "@/components/PageHeader";
+import { EquipmentStatusLabel } from "@/components/EquipmentRegister";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/states";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/context/AuthContext";
-import { api } from "@/lib/api";
-import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronUp, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-interface EquipmentHistoryEntry {
+interface OverviewItem {
   id: string;
-  equipment: string;
-  status: string;
-  user?: {
-    name: string;
-    email: string;
-    roll_no: string;
-  } | null;
-  roll_no?: string | null;
-  duration?: string | null;
-  changedAt: string;
+  name: string;
+  status: EquipmentStatus;
+  total: number;
+  history: HistoryEntry[];
 }
 
-// The backend returns: { "equipmentName": EquipmentHistoryEntry[] }
-interface EquipmentHistoryDict {
-  [equipmentName: string]: EquipmentHistoryEntry[];
-}
-
-interface PaginatedHistory {
-  history: EquipmentHistoryEntry[];
-  currentPage: number;
-  totalPages: number;
-  totalHistory: number;
-}
-
-const EquipmentHistoryPage = () => {
-  const { wrapApiCall } = useAuth();
-  const navigate = useNavigate();
-  
-  const [equipmentHistoryDict, setEquipmentHistoryDict] = useState<EquipmentHistoryDict>({});
-  const [expandedEquipment, setExpandedEquipment] = useState<string | null>(null);
-  const [fullHistory, setFullHistory] = useState<{ [equipmentName: string]: PaginatedHistory }>({});
-  const [loading, setLoading] = useState(true);
-  const [loadingEquipment, setLoadingEquipment] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [equipmentIdMap, setEquipmentIdMap] = useState<{ [equipmentName: string]: string }>({});
-
-  // Fetch initial equipment history dictionary
-  useEffect(() => {
-    const fetchEquipmentHistoryDict = async () => {
-      try {
-        setLoading(true);
-        const response = await wrapApiCall(() => 
-          api.get("/admin/get-equipment-recent-history-dict")
-        );
-        console.log("Equipment history dict response:", response);
-        
-        if (response && typeof response === 'object') {
-          setEquipmentHistoryDict(response);
-          
-          // Extract equipment IDs from the first entry of each equipment
-          const idMap: { [equipmentName: string]: string } = {};
-          Object.entries(response).forEach(([equipmentName, historyArray]) => {
-            if (historyArray && historyArray[0].equipment) {
-              idMap[equipmentName] = historyArray[0].equipment;
-            }
-          });
-          setEquipmentIdMap(idMap);
-        } else {
-          setEquipmentHistoryDict({});
-        }
-      } catch (err) {
-        console.error("Error fetching equipment history:", err);
-        toast.error("Failed to load equipment history");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEquipmentHistoryDict();
-  }, [wrapApiCall]);
-
-  // Fetch full history for an equipment when expanded
-  const fetchEquipmentFullHistory = async (equipmentName: string) => {
-    try {
-      setLoadingEquipment(equipmentName);
-      
-      const equipmentId = equipmentIdMap[equipmentName];
-      if (!equipmentId) {
-        toast.error(`Could not find equipment ID for ${equipmentName}`);
-        return;
-      }
-
-      // Get total count
-      const countResponse = await wrapApiCall(() =>
-        api.get(`/admin/get-no-of-equipment-history/${equipmentId}`)
-      );
-      console.log("Count response:", countResponse);
-      
-      // Get first page of history
-      const historyResponse = await wrapApiCall(() =>
-        api.get(`/admin/get-recent-equipment-history/${equipmentId}?page=1`)
-      );
-      console.log("History response:", historyResponse);
-
-      setFullHistory(prev => ({
-        ...prev,
-        [equipmentName]: {
-          history: historyResponse?.history || [],
-          currentPage: 1,
-          totalPages: countResponse?.totalPages || 1,
-          totalHistory: countResponse?.totalHistory || 0
-        }
-      }));
-    } catch (err) {
-      console.error(`Error fetching full history for ${equipmentName}:`, err);
-      toast.error(`Failed to load history for ${equipmentName}`);
-    } finally {
-      setLoadingEquipment(null);
-    }
-  };
-
-  // Load more history for pagination
-  const loadMoreHistory = async (equipmentName: string, page: number) => {
-    try {
-      const equipmentId = equipmentIdMap[equipmentName];
-      if (!equipmentId) return;
-
-      const response = await wrapApiCall(() =>
-        api.get(`/admin/get-recent-equipment-history/${equipmentId}?page=${page}`)
-      );
-
-      setFullHistory(prev => ({
-        ...prev,
-        [equipmentName]: {
-          ...prev[equipmentName],
-          history: [...(prev[equipmentName]?.history || []), ...(response?.history || [])],
-          currentPage: page
-        }
-      }));
-    } catch (err) {
-      console.error("Error loading more history:", err);
-      toast.error("Failed to load more history");
-    }
-  };
-
-  const handleExpand = (equipmentName: string) => {
-    if (expandedEquipment === equipmentName) {
-      setExpandedEquipment(null);
-    } else {
-      setExpandedEquipment(equipmentName);
-      if (!fullHistory[equipmentName]) {
-        fetchEquipmentFullHistory(equipmentName);
-      }
-    }
-  };
-
-  const handleLoadMore = (equipmentName: string) => {
-    const currentData = fullHistory[equipmentName];
-    if (currentData && currentData.currentPage < currentData.totalPages) {
-      loadMoreHistory(equipmentName, currentData.currentPage + 1);
-    }
-  };
-
-  // Filter equipment based on search term
-  const filteredEquipment = Object.entries(equipmentHistoryDict).filter(
-    ([equipmentName]) =>
-      equipmentName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background py-20">
-        <div className="container mx-auto px-4 md:px-6">
-          <div className="mb-6">
-            <Button variant="outline" onClick={() => navigate("/admin/dashboard")}>
-              ← Back to Dashboard
-            </Button>
-          </div>
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading equipment history...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+const HistoryRow = ({ entry }: { entry: HistoryEntry }) => {
+  const status = normalizeStatus(entry.status);
+  const who = entry.student ? `${entry.student.name} (${entry.student.rollNo})` : entry.rollNo;
   return (
-    <div className="min-h-screen bg-background py-20">
-      <div className="container mx-auto px-4 md:px-6">
-        {/* Back Button */}
-        <div className="mb-6">
-          <Button variant="outline" onClick={() => navigate("/admin/dashboard")}>
-            ← Back to Dashboard
-          </Button>
-        </div>
-
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Equipment History</h1>
-          <p className="text-muted-foreground">
-            View complete history of all equipment status changes and assignments
-          </p>
-        </div>
-
-        {/* Search */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search equipment..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        {/* Equipment List */}
-        <div className="space-y-4">
-          {filteredEquipment.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <p className="text-center text-muted-foreground">
-                  {searchTerm ? "No equipment found matching your search" : "No equipment history available"}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            filteredEquipment.map(([equipmentName, equipmentHistory]) => (
-              <Card key={equipmentName} className="border-2 hover:shadow-lg transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-xl">{equipmentName}</CardTitle>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleExpand(equipmentName)}
-                      disabled={loadingEquipment === equipmentName || !equipmentIdMap[equipmentName]}
-                    >
-                      {loadingEquipment === equipmentName ? (
-                        "Loading..."
-                      ) : expandedEquipment === equipmentName ? (
-                        <>
-                          <ChevronUp className="w-4 h-4 mr-2" />
-                          Collapse
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="w-4 h-4 mr-2" />
-                          Expand
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Recent {equipmentHistory?.length || 0} changes
-                  </p>
-                </CardHeader>
-
-                {/* Recent History (Always visible) */}
-                <CardContent className="pt-0">
-                  <div className="space-y-3">
-                    {equipmentHistory?.slice(0, 3).map((entry) => (
-                      <HistoryEntry key={entry.id} entry={entry} />
-                    ))}
-                  </div>
-
-                  {/* Expanded Full History */}
-                  {expandedEquipment === equipmentName && (
-                    <div className="mt-6 border-t pt-6">
-                      <h4 className="font-semibold mb-4">Complete History</h4>
-                      
-                      {loadingEquipment === equipmentName ? (
-                        <div className="text-center py-4">
-                          <p className="text-muted-foreground">Loading full history...</p>
-                        </div>
-                      ) : fullHistory[equipmentName] ? (
-                        <div className="space-y-3">
-                          {fullHistory[equipmentName].history.map((entry) => (
-                            <HistoryEntry key={entry.id} entry={entry} />
-                          ))}
-                          
-                          {/* Load More Button */}
-                          {fullHistory[equipmentName].currentPage < 
-                           fullHistory[equipmentName].totalPages && (
-                            <div className="text-center pt-4">
-                              <Button
-                                variant="outline"
-                                onClick={() => handleLoadMore(equipmentName)}
-                              >
-                                Load More History
-                              </Button>
-                              <p className="text-xs text-muted-foreground mt-2">
-                                Showing {fullHistory[equipmentName].history.length} of{" "}
-                                {fullHistory[equipmentName].totalHistory} entries
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="text-center py-4">
-                          <p className="text-muted-foreground">Failed to load history</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
+    <li className="grid grid-cols-[9rem_5.5rem_minmax(0,1fr)] gap-4 py-3 text-sm">
+      <time dateTime={entry.changedAt} className="text-muted-foreground tabular">
+        {formatDayClock(entry.changedAt)}
+      </time>
+      <EquipmentStatusLabel status={status} />
+      <span className="min-w-0">
+        {status === "in_use" ? (
+          <>
+            {who ?? "Unknown student"}
+            {entry.dueAt && <span className="text-muted-foreground tabular">, due {formatClock(entry.dueAt)}</span>}
+          </>
+        ) : (
+          <span className="text-muted-foreground">{status === "available" ? "Back at the desk" : "Taken out of use"}</span>
+        )}
+        {entry.staff && <span className="text-muted-foreground">, by {entry.staff}</span>}
+      </span>
+    </li>
   );
 };
 
-// Component for individual history entry
-const HistoryEntry = ({ entry }: { entry: EquipmentHistoryEntry }) => {
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "available":
-        return "bg-green-100 text-green-800";
-      case "in-use":
-        return "bg-yellow-100 text-yellow-800";
-      case "broken":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
+const FullHistory = ({ item, onClose }: { item: OverviewItem; onClose: () => void }) => {
+  const [page, setPage] = useState(1);
+  const history = useQuery({
+    queryKey: [...qk.itemHistory, item.id, page],
+    queryFn: () => api.get<Paged & { history: HistoryEntry[] }>(`/admin/get-equipment-history/${item.id}${qs({ page })}`),
+    placeholderData: keepPreviousData,
+  });
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="capitalize">{item.name}</DialogTitle>
+          <DialogDescription>Every status change, newest first. History is kept for 90 days.</DialogDescription>
+        </DialogHeader>
+        {history.error ? (
+          <ErrorState error={history.error} onRetry={() => history.refetch()} />
+        ) : !history.data ? (
+          <ListSkeleton rows={5} rowClassName="h-8" />
+        ) : (
+          <>
+            <ol className="divide-y divide-border border-y border-border max-h-[60vh] overflow-y-auto">
+              {history.data.history.map((entry) => (
+                <HistoryRow key={entry.id} entry={entry} />
+              ))}
+            </ol>
+            {history.data.totalPages > 1 && (
+              <nav className="flex items-center gap-3" aria-label="Pages">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  Newer
+                </Button>
+                <span className="text-sm text-muted-foreground tabular">
+                  Page {history.data.page} of {history.data.totalPages}
+                </span>
+                <Button variant="outline" size="sm" disabled={page >= history.data.totalPages} onClick={() => setPage((p) => p + 1)}>
+                  Older
+                </Button>
+              </nav>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
 
-  // Safe access to user properties
-  const getUserDisplay = () => {
-    if (entry.user) {
-      return `By: ${entry.user.name || 'Unknown'} (${entry.user.roll_no || 'No roll number'})`;
-    } else if (entry.roll_no) {
-      return `By: Roll No: ${entry.roll_no}`;
-    } else {
-      return "System";
-    }
-  };
+const EquipmentHistoryPage = () => {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState<OverviewItem | null>(null);
+  const overview = useQuery({ queryKey: qk.historyOverview, queryFn: () => api.get<OverviewItem[]>("/admin/get-equipment-history-overview") });
+
+  const term = search.trim().toLowerCase();
+  const items = (overview.data ?? []).filter((i) => !term || i.name.toLowerCase().includes(term));
 
   return (
-    <div className="flex items-start justify-between p-3 rounded-lg border hover:bg-muted/30 transition">
-      <div className="flex-1">
-        <div className="flex items-center gap-4 mb-1">
-          <Badge className={getStatusColor(entry.status)}>
-            {entry.status}
-          </Badge>
-          {entry.duration && (
-            <span className="text-sm text-muted-foreground">
-              Duration: {entry.duration}
-            </span>
-          )}
+    <div className="min-h-screen bg-background">
+      <Navbar role="admin" />
+      <PageHeader title="History" description="Every status change for each item, who had it, and which staff member made the change." width="max-w-4xl" />
+
+      <main id="main" tabIndex={-1} className="container mx-auto max-w-4xl px-4 md:px-6 pt-10 pb-16 focus:outline-none">
+        <div className="relative max-w-sm mb-10">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden />
+          <Input type="search" placeholder="Search equipment" aria-label="Search equipment" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <div className="text-xs text-muted-foreground">
-          {getUserDisplay()}
-          {" • "}
-          {new Date(entry.changedAt).toLocaleString()}
-        </div>
-      </div>
+
+        {overview.error ? (
+          <ErrorState title="Couldn't load history" error={overview.error} onRetry={() => overview.refetch()} />
+        ) : overview.isLoading ? (
+          <ListSkeleton rows={4} rowClassName="h-28" />
+        ) : items.length === 0 ? (
+          <EmptyState title={term ? `No equipment matches “${search.trim()}”` : "No equipment yet"}>
+            {term ? "Check the spelling or clear the search." : "History appears here once items are added and lent."}
+          </EmptyState>
+        ) : (
+          <div className="space-y-12">
+            {items.map((item) => (
+              <section key={item.id} aria-labelledby={`history-${item.id}`}>
+                <div className="flex items-baseline justify-between gap-4 mb-2">
+                  <h2 id={`history-${item.id}`} className="type-heading text-xl capitalize">
+                    {item.name}
+                  </h2>
+                  {item.total > item.history.length && (
+                    <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setOpen(item)}>
+                      All {item.total} changes
+                    </Button>
+                  )}
+                </div>
+                {item.history.length === 0 ? (
+                  <p className="text-sm text-muted-foreground border-y border-border py-3">No changes recorded yet.</p>
+                ) : (
+                  <ol className="divide-y divide-border border-y border-border">
+                    {item.history.map((entry) => (
+                      <HistoryRow key={entry.id} entry={entry} />
+                    ))}
+                  </ol>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {open && <FullHistory item={open} onClose={() => setOpen(null)} />}
     </div>
   );
 };

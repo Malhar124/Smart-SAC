@@ -1,121 +1,194 @@
-# Smart-SAC
+# Smart SAC
 
-**Smart-SAC** (Student Activity Center) is a comprehensive full-stack application designed to modernize and streamline the management of student activity centers. Developed as a DBMS Group Project, it provides a unified platform for students to manage sports equipment, book facilities, communicate with peers, and raise issues, while giving administrators a powerful dashboard to oversee operations.
+The equipment counter at IIIT Allahabad's Student Activity Center, online. Students see what's free before they walk over, reserve it for 15 minutes, book rooms, find people to play with and report problems. Desk staff lend and take back equipment in a few keystrokes, see what's overdue, manage rooms and answer tickets.
 
----
-
-## 🚀 Features and Functionality
-
-### For Students
-- **Domain-Restricted Authentication:** Secure sign-up and login restricted exclusively to official institute email addresses (e.g., `@iiita.ac.in`), featuring email verification.
-- **Equipment Management:** Browse available sports equipment (Cricket, Volleyball, Basketball, Lawn Tennis, Football, etc.), check them out for a specific duration, and view personal checkout history.
-- **Facility Booking:** Check the real-time availability of rooms and sports facilities, and book time slots.
-- **Peer-to-Peer Chat:** A built-in messaging system allowing students to communicate and coordinate activities with each other.
-- **Ticketing System:** Seamlessly raise tickets for broken equipment or facility issues directly to the administration.
-- **User Profiles & Game Ratings:** Maintain personal profiles, showcase achievements, and track skill ratings across various games.
-- **Announcements:** Stay updated with real-time announcements broadcasted by the administration.
-
-### For Administrators
-- **Admin Dashboard:** A comprehensive centralized dashboard featuring statistical charts and metrics (powered by Recharts).
-- **Issue Management:** View, update, and resolve user-submitted tickets.
-- **Inventory Oversight:** Track the real-time status of all equipment and monitor detailed equipment history and checkout logs.
-- **Games & Facilities Management:** Add or remove sports/games and manage room capacities and availability.
+Developed as a DBMS group project.
 
 ---
 
-## 💻 Tech Stack
+## Features
 
-### Frontend
-- **Framework:** React 18 with Vite
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS
-- **UI Components:** shadcn/ui & Radix UI
-- **Routing:** React Router v6
-- **State Management & Data Fetching:** React Query (@tanstack/react-query)
-- **Forms & Validation:** React Hook Form & Zod
-- **Data Visualization:** Recharts
+### Students
+- **Sign up with an institute email.** Only `@iiita.ac.in` addresses; the email is confirmed with a 6-digit code before the first sign-in.
+- **Equipment rack.** Every item with its state: free, held, out (with who has it and when it's due back) or broken. Updates live.
+- **Reservations.** Hold a free item for 15 minutes, one at a time, then collect it at the desk. Reminders before a hold ends.
+- **Due times and reminders.** Each loan has a due time; students get a reminder 15 minutes before and a notice if it goes overdue.
+- **Borrowing standing.** Late returns are counted over 30 days (returns within 10 minutes of the due time don't count). Three late returns, or any overdue item, pause borrowing for a week, and the student can see why.
+- **Rooms.** Book the music room, drama room and others in whole-hour slots, up to two hours at a time and a week ahead.
+- **Busy times.** How many items are out at each hour of a typical day, calculated from real checkouts, per game.
+- **Tickets.** Report broken equipment or ask for new equipment, then follow a timeline of status changes and replies from the desk.
+- **Chat and Find players.** Message other students, see unread counts and read receipts, and find people by the games they play.
+- **Notifications.** In-app notifications for holds, due times, ticket replies, room changes and announcements.
 
-### Backend
-- **Framework:** Node.js & Express.js
-- **Database:** PostgreSQL
-- **ORM:** Prisma
-- **Authentication:** JSON Web Tokens (JWT) & bcryptjs
-- **File Uploads:** Multer & Cloudinary
-- **Email Services:** Nodemailer (for OTPs and verification)
-- **Task Scheduling:** node-cron
+### Desk staff
+- **Desk dashboard.** Overdue loans first (with phone numbers), then counts and the full equipment register.
+- **Lend & return.** Keyboard-first: scan or type a roll number (USB barcode scanners work as-is, or use the webcam), see the student's standing and loans, pick an item, press 1 to 4 for a duration, press Enter. Students with a block can be lent to only with a recorded override.
+- **Equipment.** Games and their items: add, remove, mark broken or fixed.
+- **Rooms.** See bookings with who made them, close a room, cancel a booking with a reason (the student is notified).
+- **Tickets.** Filter by status, search, reply and change status with a note to the student.
+- **History.** Every status change for every item, with the staff member who made it.
+- **Command palette.** Ctrl+K (Cmd+K on a Mac) to find any item, student, room or ticket, or jump to a page.
 
 ---
 
-## 🛠️ Steps to Run the Project
+## Tech stack
+
+| Layer | Choices |
+|---|---|
+| Frontend | React 18, TypeScript (strict), Vite, Tailwind CSS, shadcn/ui on Radix, TanStack Query, Zod, Recharts |
+| Backend | Node.js 20, Express 5, Prisma 7 with PostgreSQL 16, Zod validation, OpenAPI docs (Swagger UI), pino logs, node-cron |
+| Live updates | Server-Sent Events (`GET /api/v1/events`) |
+| Auth | httpOnly JWT cookies with rotating refresh tokens; separate student and staff roles |
+| Quality | Vitest + Supertest (backend, against a real database), Vitest + Testing Library (frontend), ESLint, GitHub Actions |
+| Operations | Docker images, docker-compose for the full stack, Prisma migrations, optional Sentry on both ends |
+
+---
+
+## Run it locally
 
 ### Prerequisites
-- Node.js (v18 or higher recommended)
-- PostgreSQL installed and running
-- Cloudinary account (for image uploads)
-- SMTP credentials (e.g., Gmail App Password for sending emails)
+- Node.js 20 or newer
+- Docker Desktop (for PostgreSQL), or your own PostgreSQL 16
 
-### 1. Clone the Repository
-```bash
-git clone <repository-url>
-cd Smart-SAC
-```
-
-### 2. Backend Setup
-Open a terminal and navigate to the backend directory:
+### 1. Database
 ```bash
 cd backend
-```
-Install dependencies:
-```bash
 npm install
-```
-Create a `.env` file in the `backend` directory and add the following variables:
-```env
-DATABASE_URL="postgresql://<username>:<password>@localhost:5432/<database_name>?schema=public"
-JWT_SECRET="your_jwt_secret_key"
-PORT=5000
-
-# Nodemailer SMTP Configuration
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT=587
-SMTP_USER="your_email@gmail.com"
-SMTP_PASS="your_app_password"
-
-# Cloudinary Configuration
-CLOUDINARY_CLOUD_NAME="your_cloud_name"
-CLOUDINARY_API_KEY="your_api_key"
-CLOUDINARY_API_SECRET="your_api_secret"
-```
-Run Prisma migrations to initialize the database schema:
-```bash
-npx prisma migrate dev
-```
-Seed the database with initial data (equipment, admin accounts, etc.):
-```bash
-npm run seed
-```
-Start the backend development server:
-```bash
-npm run dev
+npm run db:up                 # PostgreSQL in Docker on localhost:5432
+cp .env.example .env          # then fill in the secrets (see below)
+npm run db:deploy             # apply the migrations
 ```
 
-### 3. Frontend Setup
-Open a new terminal and navigate to the frontend directory:
+### 2. Demo data (optional)
 ```bash
-cd frontend
+npm run seed                  # 24 students, 31 items, 4 weeks of checkouts, rooms, tickets
 ```
-Install dependencies:
+The seed refuses to run on a database that already has accounts; use `npm run seed -- --yes` to replace everything. Demo sign-ins (password `Demo@1234` for both):
+
+| | Email |
+|---|---|
+| Student | `iit2023001@iiita.ac.in` |
+| Staff | `desk@iiita.ac.in` |
+
+### 3. Backend
 ```bash
+npm run dev                   # http://localhost:8000, API docs at http://localhost:8000/api/docs
+```
+
+### 4. Frontend
+```bash
+cd ../frontend
 npm install
-```
-Create a `.env` file in the `frontend` directory and add your backend API URL:
-```env
-VITE_API_URL="http://localhost:5000"
-```
-Start the frontend development server:
-```bash
-npm run dev
+cp .env.example .env.local    # VITE_API_BASE_URL=http://localhost:8000/api/v1
+npm run dev                   # http://localhost:5173
 ```
 
-### 4. Access the Application
-Open your browser and navigate to the URL provided by Vite (usually `http://localhost:5173`).
+### Email in development
+Leave `EMAIL_USER` / `EMAIL_PASS` empty and verification and reset codes are printed in the backend log instead of emailed. For real email with Gmail, use an [App Password](https://support.google.com/accounts/answer/185833).
+
+### Staff accounts
+Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`.
+
+---
+
+## Run the whole stack in Docker
+
+```bash
+docker compose up --build     # http://localhost:8080
+```
+This builds the API and web app, runs the migrations and seeds demo data into its own database volume (it never touches the development database above). nginx serves the app and proxies `/api`, including the live-updates stream. Set real secrets in a `.env` file next to `docker-compose.yml` for anything beyond a local demo.
+
+---
+
+## Configuration
+
+Backend settings are validated at startup (`backend/src/config/env.js`); the server refuses to start with a missing or, in production, short secret. See `backend/.env.example` for every option.
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET` | Token signing secrets (`openssl rand -hex 32`) |
+| `ACCESS_TOKEN_EXPIRY`, `REFRESH_TOKEN_EXPIRY` | Session lengths (default 15m and 10d; the app refreshes silently) |
+| `CORS_ORIGIN` | Comma-separated frontend origins |
+| `ADMIN_EMAILS` | Emails allowed to create staff accounts |
+| `SMTP_HOST`, `SMTP_PORT`, `EMAIL_USER`, `EMAIL_PASS` | Outgoing email |
+| `SPORTS_HEAD_EMAIL` | Receives new tickets by email |
+| `APP_TIMEZONE` | The SAC's time zone (default `Asia/Kolkata`) |
+| `SENTRY_DSN` | Optional error tracking |
+
+Frontend: `VITE_API_BASE_URL`, `VITE_APP_TIMEZONE` and optional `VITE_SENTRY_DSN` (see `frontend/.env.example`).
+
+---
+
+## Scripts
+
+| Backend (`backend/`) | |
+|---|---|
+| `npm run dev` | API with auto-reload |
+| `npm test` | Test suite against `TEST_DATABASE_URL` (wiped on every run) |
+| `npm run lint` | ESLint |
+| `npm run db:migrate` | Create a migration after changing `prisma/schema.prisma` |
+| `npm run db:deploy` | Apply pending migrations |
+| `npm run seed` | Demo data |
+
+| Frontend (`frontend/`) | |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm test` | Unit and component tests |
+| `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
+| `npm run build` | Production build |
+
+The backend tests need a separate database, by default `smart_sac_test` on the local PostgreSQL:
+```bash
+docker exec smart-sac-postgres psql -U smartsac -d postgres -c "CREATE DATABASE smart_sac_test"
+```
+
+---
+
+## API
+
+Every route is validated with Zod, and the same schemas generate the OpenAPI document:
+- Swagger UI: `http://localhost:8000/api/docs`
+- OpenAPI JSON: `http://localhost:8000/api/openapi.json`
+- Health check: `http://localhost:8000/api/health`
+
+Responses use one envelope, `{ statusCode, success, message, data }`; errors are `{ success: false, message, errors[] }` with one entry per invalid field.
+
+---
+
+## Project structure
+
+```
+backend/
+  prisma/              schema and migrations
+  src/
+    config/            validated settings and SAC rules (policy.js)
+    controllers/       HTTP handlers
+    services/          business rules: lending, standing, rooms, tickets, usage, notifications
+    routes/            routes with their Zod schemas (also the API docs)
+    jobs/              reminders, overdue notices, hold expiry, cleanup
+    lib/               logger, live events, OpenAPI, time zones
+  tests/               API tests against a real database
+frontend/
+  src/
+    pages/             one file per screen (each loaded on demand)
+    components/        shared UI, including the court band, rack and command palette
+    context/           auth and live updates
+    lib/               API client, schemas, formatting, types
+docker-compose.yml     the full stack
+```
+
+---
+
+## Rules at a glance
+
+Defined once in `backend/src/config/policy.js`:
+
+| Rule | Value |
+|---|---|
+| Reservation hold | 15 minutes, one at a time |
+| Lend duration | 15 minutes to 8 hours |
+| Late-return grace | 10 minutes |
+| Borrowing block | 3 late returns in 30 days, for 7 days; or while anything is overdue |
+| Room bookings | Whole hours, 6:00 to 22:00, up to 2 hours, up to 7 days ahead, 2 upcoming per student |
+| History retention | 90 days |

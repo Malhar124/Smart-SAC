@@ -1,181 +1,189 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Search } from "lucide-react";
 import Navbar from "@/components/Navbar";
-import PlayerCard from "@/components/PlayerCard";
+import PageHeader from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Filter } from "lucide-react";
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { useAuth } from "@/context/AuthContext";
-import { toast as sonner } from "sonner";
+import { qk } from "@/lib/queryKeys";
+import type { Player } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-// Define the type for the Player data we expect
-interface ApiPlayer {
-  id: string;
-  fullname: string;
-  username: string;
-  email: string;
-  roll_no: string;
-  phone_number: string;
-  games: {
-    id: string;
-    game: {
-      id: string;
-      name: string;
-      category?: string;
-    };
-    rating: number;
-  }[];
-  achievements: string[];
-}
+type ApiPlayer = Player;
 
 const FindPlayers = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSport, setSelectedSport] = useState<string | null>(null);
-  const { wrapApiCall } = useAuth();
-  
-  // Fetch all players
-  const { data: players, isLoading } = useQuery({
-    queryKey: ["allPlayers"],
-    queryFn: async (): Promise<ApiPlayer[]> => {
-      const response = await wrapApiCall(() => api.get("/users/get-all-players"));
-      // Handle different response structures
-      return response?.data?.data || response?.data || response || [];
-    },
+  const [selectedGame, setSelectedGame] = useState<string | null>(null);
+
+  const { data: players = [], isLoading, error, refetch } = useQuery({
+    queryKey: qk.players,
+    queryFn: () => api.get<Player[]>("/users/get-all-players"),
   });
 
-  // Create the mutation for sending a message
   const sendMessageMutation = useMutation({
-    mutationFn: (variables: { receiverId: string, content: string }) => {
-      return wrapApiCall(() => api.post("/users/send-message", variables));
-    },
+    mutationFn: (variables: { receiverId: string; content: string }) => api.post("/users/send-message", variables),
     onSuccess: () => {
-      sonner.success("Request Sent!", {
-        description: "Your play request has been sent as a message.",
-      });
+      toast.success("Request sent", { description: "It's in your chat with them." });
     },
-    onError: (error) => {
-      console.error("Failed to send request", error);
-      sonner.error("Failed to send request");
-    }
   });
 
-  // Create the handler to be passed to the card
-  const handleSendRequest = (playerId: string, sport: string) => {
+  const askToPlay = (player: ApiPlayer) => {
+    // Ask about the game being filtered on, otherwise their first game
+    const game = selectedGame ?? player.games[0]?.game.name;
     sendMessageMutation.mutate({
-      receiverId: playerId,
-      content: `Hey! I saw you on the SAC page. Would you like to play ${sport} sometime?`
+      receiverId: player.id,
+      content: game ? `Hey! Would you like to play ${game} sometime?` : "Hey! Would you like to play sometime?",
     });
   };
 
-  // Get unique sports from all players' games
-  const allSports = Array.from(
-    new Set(
-      players?.flatMap(player => 
-        player.games?.map(game => game.game.name) || []
-      ) || []
-    )
-  ).sort();
+  const allGames = Array.from(new Set(players.flatMap((p) => p.games?.map((g) => g.game.name) ?? []))).sort();
 
-  // Filter the dynamic data
-  const filteredPlayers = players?.filter(player => {
-    // Check if any game matches the selected sport
-    const matchesSport = !selectedSport || 
-      player.games?.some(game => 
-        game.game.name.toLowerCase().includes(selectedSport.toLowerCase())
-      );
-    
-    const matchesSearch = player.fullname.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch && matchesSport;
-  }) || [];
+  const search = searchQuery.trim().toLowerCase();
+  const filteredPlayers = players.filter((player) => {
+    const matchesGame = !selectedGame || player.games?.some((g) => g.game.name === selectedGame);
+    const matchesSearch = !search || player.fullname.toLowerCase().includes(search);
+    return matchesGame && matchesSearch;
+  });
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
-      <main className="container mx-auto px-4 md:px-6 pt-24 pb-12">
-        {/* Header */}
-        <div className="mb-8 animate-fade-in">
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">Find Players</h1>
-          <p className="text-muted-foreground">Connect with other students and find playing partners</p>
-        </div>
 
-        {/* Search and Filter */}
-        <div className="mb-8 space-y-4 animate-scale-in">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+      <PageHeader
+        title="Find players"
+        description="Students who've added their games. Ratings are out of 5 and set by each player."
+        width="max-w-4xl"
+      />
+
+      <main id="main" tabIndex={-1} className="focus:outline-none container mx-auto max-w-4xl px-4 md:px-6 pt-10 pb-16">
+
+        <div className="space-y-4 mb-6">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden />
             <Input
-              type="text"
-              placeholder="Search by student name..."
-              className="pl-10 h-12 text-lg"
+              type="search"
+              placeholder="Search by name"
+              aria-label="Search players by name"
+              className="pl-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
 
-          {/* Sport Filter */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Filter className="w-4 h-4 text-primary" />
-              Filter by Sport:
+          {allGames.length > 0 && (
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by game">
+              {[null, ...allGames].map((game) => (
+                <button
+                  key={game ?? "all"}
+                  type="button"
+                  aria-pressed={selectedGame === game}
+                  onClick={() => setSelectedGame(game)}
+                  className={cn(
+                    "h-8 px-3 rounded-md border text-sm font-medium transition-colors",
+                    game && "capitalize",
+                    selectedGame === game
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {game ?? "All games"}
+                </button>
+              ))}
             </div>
-            <Button
-              variant={selectedSport === null ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedSport(null)}
-              className={selectedSport === null ? "bg-gradient-primary" : ""}
-            >
-              All Sports
-            </Button>
-            {allSports.map((sport) => (
-              <Button
-                key={sport}
-                variant={selectedSport === sport ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedSport(sport)}
-                className={selectedSport === sport ? "bg-gradient-primary" : ""}
-              >
-                {sport}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {/* Results Count */}
-        <div className="mb-6">
-          <p className="text-muted-foreground">
-            Showing <span className="font-semibold text-foreground">{filteredPlayers.length}</span> player{filteredPlayers.length !== 1 ? 's' : ''}
-            {selectedSport && <span> for <span className="font-semibold text-foreground">{selectedSport}</span></span>}
-          </p>
-        </div>
-
-        {/* Players Grid */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {isLoading ? (
-            <p>Loading players...</p>
-          ) : (
-            filteredPlayers.map((player, index) => (
-              <div key={player.id} className="animate-fade-in" style={{ animationDelay: `${index * 0.05}s` }}>
-                <PlayerCard 
-                  playerId={player.id}
-                  name={player.fullname}
-                  available={true} // You might want to add this field to your ApiPlayer interface
-                  games={player.games || []}
-                  onSendRequest={handleSendRequest}
-                  isSending={sendMessageMutation.isPending && sendMessageMutation.variables?.receiverId === player.id}
-                />
-              </div>
-            ))
           )}
         </div>
 
-        {/* No Results */}
-        {filteredPlayers.length === 0 && !isLoading && (
-          <div className="text-center py-12 animate-fade-in">
-            <p className="text-xl text-muted-foreground mb-4">No players found</p>
-            <p className="text-muted-foreground">Try adjusting your search or filter criteria</p>
+        {error ? (
+          <div className="border border-border rounded-lg bg-card p-6">
+            <h2 className="type-heading text-lg">Couldn't load players</h2>
+            <p className="mt-1 text-muted-foreground">Check that you're online, then try again.</p>
+            <Button className="mt-4" onClick={() => refetch()}>
+              Try again
+            </Button>
           </div>
+        ) : isLoading ? (
+          <div className="space-y-3" aria-label="Loading players">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))}
+          </div>
+        ) : filteredPlayers.length === 0 ? (
+          <div className="border border-dashed border-border rounded-lg p-6 text-center">
+            {players.length === 0 ? (
+              <p className="text-muted-foreground">
+                No other players yet. Add your games on your{" "}
+                <Link to="/student/profile" className="text-primary underline-offset-4 hover:underline">
+                  profile
+                </Link>{" "}
+                so people can find you.
+              </p>
+            ) : (
+              <>
+                <p className="text-muted-foreground">No players match that search.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSelectedGame(null);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground mb-2 tabular">
+              {filteredPlayers.length} {filteredPlayers.length === 1 ? "player" : "players"}
+            </p>
+            <ul className="divide-y divide-border border-y border-border">
+              {filteredPlayers.map((player) => {
+                const sending =
+                  sendMessageMutation.isPending && sendMessageMutation.variables?.receiverId === player.id;
+                return (
+                  <li key={player.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="font-medium">{player.fullname}</p>
+                      {player.games.length > 0 ? (
+                        <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                          {player.games.map((g) => (
+                            <li
+                              key={g.game.id}
+                              className={cn(
+                                "capitalize",
+                                selectedGame && g.game.name !== selectedGame ? "text-muted-foreground" : "text-foreground"
+                              )}
+                            >
+                              {g.game.name}{" "}
+                              <span className="text-muted-foreground tabular">{g.rating.toFixed(1)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-sm text-muted-foreground">No games added yet</p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-fit shrink-0"
+                      disabled={sending}
+                      onClick={() => askToPlay(player)}
+                    >
+                      {sending ? "Sending…" : "Ask to play"}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </main>
     </div>
