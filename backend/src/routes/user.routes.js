@@ -4,7 +4,7 @@ import { authLimiter } from "../middlewares/rateLimit.middleware.js";
 import * as v from "../validation/common.js";
 import * as user from "../controllers/user.controller.js";
 import * as features from "../controllers/features.controller.js";
-import { ROOM_MAX_HOURS_PER_BOOKING } from "../config/policy.js";
+import { MESSAGES_PAGE_SIZE, ROOM_MAX_HOURS_PER_BOOKING } from "../config/policy.js";
 
 const routes = createRoutes({ prefix: "/users", tag: "Students" });
 const { get, post } = routes;
@@ -70,6 +70,12 @@ const EquipmentIdBody = z.object({ equipmentId: v.id });
 const UsageQuery = z.object({
   days: z.coerce.number().int().refine((d) => [7, 14, 28, 56].includes(d), "Pick 7, 14, 28 or 56 days").default(28),
   gameId: v.id.optional(),
+});
+
+const MessagesQuery = z.object({
+  // The oldest message already shown; the page holds the ones sent before it
+  before: v.id.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(MESSAGES_PAGE_SIZE),
 });
 
 const SendMessageBody = z.object({
@@ -138,7 +144,7 @@ get("/get-all-players", { summary: "Other students and the games they play", aut
 get("/get-games", { summary: "Games offered at the SAC", auth: "user" }, user.getGames);
 post("/send-message", { summary: "Send a chat message", auth: "user", body: SendMessageBody, tags: ["Chat"] }, user.sendMessage);
 get("/get-conversations", { summary: "Latest message and unread count per conversation", auth: "user", tags: ["Chat"] }, user.getConversations);
-get("/get-messages/:otherUserId", { summary: "A conversation; marks the other student's messages read", auth: "user", params: v.idParam("otherUserId"), tags: ["Chat"] }, user.getMessages);
+get("/get-messages/:otherUserId", { summary: "A page of a conversation, newest last; marks the other student's messages read", auth: "user", params: v.idParam("otherUserId"), query: MessagesQuery, tags: ["Chat"] }, user.getMessages);
 
 // ---------------------------------------------------------------- tickets
 

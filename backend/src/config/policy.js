@@ -26,8 +26,12 @@ export const ROOM_MAX_HOURS_PER_BOOKING = 2;
 export const ROOM_MAX_UPCOMING_BOOKINGS = 2;
 export const ROOM_REMINDER_MINUTES = 15;
 
-/** History rows are kept this long */
+/** History rows and notifications are kept this long */
 export const HISTORY_RETENTION_DAYS = 90;
+export const NOTIFICATION_RETENTION_DAYS = 90;
+
+/** Chat messages loaded per page (older ones load on request) */
+export const MESSAGES_PAGE_SIZE = 50;
 
 /** Email codes (verification, password reset): wrong guesses allowed per code, and the wait between codes */
 export const MAX_CODE_ATTEMPTS = 5;

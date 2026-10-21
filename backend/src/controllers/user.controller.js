@@ -402,8 +402,10 @@ export const getConversations = async (req, res) => {
   return res.status(200).json(new ApiResponse(200, conversations, "Conversations"));
 };
 
+/** One page of a conversation in time order: the latest `limit` messages, or the ones before `before` */
 export const getMessages = async (req, res) => {
   const { otherUserId } = req.params;
+  const { before, limit } = req.query;
   const userId = req.user.id;
 
   const { count } = await prisma.message.updateMany({
@@ -413,20 +415,26 @@ export const getMessages = async (req, res) => {
   // Let the sender's tabs know their messages were read, and this student's other tabs update badges
   if (count > 0) publish("message.read", { readerId: userId, otherUserId }, { users: [userId, otherUserId] });
 
-  const messages = await prisma.message.findMany({
+  // Newest first so `take` keeps the latest; one extra row says whether older messages exist
+  const rows = await prisma.message.findMany({
     where: {
       OR: [
         { senderId: userId, receiverId: otherUserId },
         { senderId: otherUserId, receiverId: userId },
       ],
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
+    ...(before && { cursor: { id: before }, skip: 1 }),
     select: { id: true, senderId: true, content: true, createdAt: true, status: true },
   });
+  const hasMore = rows.length > limit;
+  const messages = rows
+    .slice(0, limit)
+    .reverse()
+    .map((m) => ({ id: m.id, sender: m.senderId, content: m.content, createdAt: m.createdAt, status: m.status }));
 
-  return res.status(200).json(
-    new ApiResponse(200, messages.map((m) => ({ id: m.id, sender: m.senderId, content: m.content, createdAt: m.createdAt, status: m.status })), "Messages")
-  );
+  return res.status(200).json(new ApiResponse(200, { messages, hasMore }, "Messages"));
 };
 
 // ---------------------------------------------------------------- announcements (public)

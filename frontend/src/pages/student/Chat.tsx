@@ -5,15 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Send, Plus, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useRef, type ReactNode } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { api, qs } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { qk } from "@/lib/queryKeys";
-import type { ChatMessage, Conversation, Player } from "@/lib/types";
+import type { ChatMessage, ChatMessagePage, Conversation, Player } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 
 type ApiConversation = Conversation;
+type MessagePages = InfiniteData<ChatMessagePage, string | undefined>;
 
 const PersonRow = ({
   name,
@@ -71,6 +72,9 @@ const Chat = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLLIElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  // Distance from the bottom of the thread before older messages load, so the view doesn't jump
+  const keepScroll = useRef<number | null>(null);
 
   const { data: conversations, isLoading: isLoadingConversations } = useQuery({
     queryKey: qk.conversations,
@@ -83,12 +87,17 @@ const Chat = () => {
     queryFn: () => api.get<Player[]>("/users/get-all-players"),
   });
 
-  // Opening a thread marks it read on the server, which pushes a live update that refreshes badges
-  const { data: messages, isLoading: isLoadingMessages } = useQuery({
+  // Opening a thread marks it read on the server, which pushes a live update that refreshes badges.
+  // The latest messages load first; pages go newest first and each older page starts before the oldest shown.
+  const thread = useInfiniteQuery({
     queryKey: qk.messages(selectedChatId ?? ""),
-    queryFn: () => api.get<ChatMessage[]>(`/users/get-messages/${selectedChatId}`),
+    queryFn: ({ pageParam }) => api.get<ChatMessagePage>(`/users/get-messages/${selectedChatId}${qs({ before: pageParam })}`),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => (page.hasMore ? page.messages[0]?.id : undefined),
     enabled: !!selectedChatId,
   });
+  const isLoadingMessages = thread.isLoading;
+  const messages = useMemo(() => thread.data?.pages.slice().reverse().flatMap((page) => page.messages), [thread.data]);
 
   // The message appears in the thread at once, marked as sending, and is swapped for the saved one
   const sendMessageMutation = useMutation({
@@ -96,7 +105,7 @@ const Chat = () => {
     onMutate: async (variables) => {
       const key = qk.messages(variables.receiverId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<ChatMessage[]>(key);
+      const previous = queryClient.getQueryData<MessagePages>(key);
       const optimistic: ChatMessage = {
         id: `pending-${Date.now()}`,
         sender: user?.id ?? "",
@@ -105,7 +114,13 @@ const Chat = () => {
         status: "sent",
         pending: true,
       };
-      queryClient.setQueryData<ChatMessage[]>(key, [...(previous ?? []), optimistic]);
+      // The newest page is first
+      queryClient.setQueryData<MessagePages>(
+        key,
+        previous
+          ? { ...previous, pages: [{ ...previous.pages[0], messages: [...previous.pages[0].messages, optimistic] }, ...previous.pages.slice(1)] }
+          : { pages: [{ messages: [optimistic], hasMore: false }], pageParams: [undefined] }
+      );
       setMessage("");
       setShowNewChat(false);
       return { previous, key, content: variables.content };
@@ -128,9 +143,25 @@ const Chat = () => {
     }
   };
 
+  // Follow new messages, but not when older ones load above
+  const lastMessageId = messages?.[messages.length - 1]?.id;
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [lastMessageId]);
+
+  const loadEarlier = () => {
+    const el = threadRef.current;
+    if (el) keepScroll.current = el.scrollHeight - el.scrollTop;
+    thread.fetchNextPage();
+  };
+  const pageCount = thread.data?.pages.length ?? 0;
+  useLayoutEffect(() => {
+    const el = threadRef.current;
+    if (el && keepScroll.current !== null) {
+      el.scrollTop = el.scrollHeight - keepScroll.current;
+      keepScroll.current = null;
+    }
+  }, [pageCount]);
 
   const openThread = (id: string) => {
     setSelectedChatId(id);
@@ -319,7 +350,7 @@ const Chat = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-4 py-4 bg-background" aria-live="polite">
+                <div ref={threadRef} className="flex-1 overflow-y-auto px-4 py-4 bg-background" aria-live="polite">
                   {isLoadingMessages ? (
                     <div className="space-y-3">
                       <Skeleton className="h-10 w-1/2" />
@@ -331,6 +362,13 @@ const Chat = () => {
                     </p>
                   ) : (
                     <ol className="flex flex-col gap-2">
+                      {thread.hasNextPage && (
+                        <li className="self-center">
+                          <Button variant="ghost" size="sm" onClick={loadEarlier} disabled={thread.isFetchingNextPage}>
+                            {thread.isFetchingNextPage ? "Loading…" : "Load earlier messages"}
+                          </Button>
+                        </li>
+                      )}
                       {messages.map((msg, index) => {
                         const isSent = String(msg.sender) === String(user?.id);
                         const lastSent = isSent && !messages.slice(index + 1).some((m) => m.sender === msg.sender);

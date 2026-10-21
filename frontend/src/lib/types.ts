@@ -276,6 +276,12 @@ export interface ChatMessage {
   pending?: boolean;
 }
 
+/** One page of a conversation, oldest first; `hasMore` when earlier messages exist */
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+}
+
 export interface SearchResults {
   equipment: { id: string; name: string; status: EquipmentStatus }[];
   students: { id: string; fullname: string; roll_no: string; email: string }[];

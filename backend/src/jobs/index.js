@@ -4,7 +4,14 @@ import { logger } from "../lib/logger.js";
 import { publish } from "../lib/events.js";
 import { formatClock } from "../lib/time.js";
 import { notify } from "../services/notifications.service.js";
-import { DUE_SOON_MINUTES, MINUTE, RESERVATION_REMINDER_MINUTES, ROOM_REMINDER_MINUTES } from "../config/policy.js";
+import {
+  DAY,
+  DUE_SOON_MINUTES,
+  MINUTE,
+  NOTIFICATION_RETENTION_DAYS,
+  RESERVATION_REMINDER_MINUTES,
+  ROOM_REMINDER_MINUTES,
+} from "../config/policy.js";
 
 // Every reminder is "claimed" with a conditional update before it is sent, so a job that overlaps
 // itself (or a second backend instance) never sends the same notification twice.
@@ -134,16 +141,26 @@ export const runReminders = async (now = new Date()) => ({
   roomsReminded: await remindRoomBookings(now),
 });
 
-/** Deletes rows past their retention date (announcements, history, sessions) and sign-ups never confirmed */
+/**
+ * Deletes rows past their retention date (announcements, history, sessions, notifications older than
+ * NOTIFICATION_RETENTION_DAYS; each announcement adds one per student) and sign-ups never confirmed
+ */
 export const runCleanup = async (now = new Date()) => {
-  const [announcements, history, unconfirmed, sessions] = await Promise.all([
+  const [announcements, history, unconfirmed, sessions, notifications] = await Promise.all([
     prisma.announcement.deleteMany({ where: { expireAt: { lte: now } } }),
     prisma.equipmentHistory.deleteMany({ where: { expireAt: { lte: now } } }),
     prisma.user.deleteMany({ where: { isVerified: false, emailVerificationExpires: { lte: now } } }),
     prisma.session.deleteMany({ where: { expiresAt: { lte: now } } }),
+    prisma.notification.deleteMany({ where: { createdAt: { lte: new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * DAY) } } }),
   ]);
   if (announcements.count > 0) publish("announcement.changed", {}, { everyone: true });
-  return { announcements: announcements.count, history: history.count, unconfirmedAccounts: unconfirmed.count, sessions: sessions.count };
+  return {
+    announcements: announcements.count,
+    history: history.count,
+    unconfirmedAccounts: unconfirmed.count,
+    sessions: sessions.count,
+    notifications: notifications.count,
+  };
 };
 
 const tasks = [];
