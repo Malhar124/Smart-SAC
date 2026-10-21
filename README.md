@@ -9,7 +9,7 @@ Developed as a DBMS group project.
 ## Features
 
 ### Students
-- **Sign up with an institute email.** Only `@iiita.ac.in` addresses; the email is confirmed with a 6-digit code before the first sign-in.
+- **Sign up with an institute email.** Only `@iiita.ac.in` addresses; the email is confirmed with a 6-digit code before the first sign-in. The roll number comes from a student email (`iit2023001@…` is `IIT2023001`) and can't be changed afterwards, because loans and borrowing blocks are kept by it.
 - **Equipment rack.** Every item with its state: free, held, out (with who has it and when it's due back) or broken. Updates live.
 - **Reservations.** Hold a free item for 15 minutes, one at a time, then collect it at the desk. Reminders before a hold ends.
 - **Due times and reminders.** Each loan has a due time; students get a reminder 15 minutes before and a notice if it goes overdue.
@@ -38,7 +38,7 @@ Developed as a DBMS group project.
 | Frontend | React 18, TypeScript (strict), Vite, Tailwind CSS, shadcn/ui on Radix, TanStack Query, Zod, Recharts |
 | Backend | Node.js 20, Express 5, Prisma 7 with PostgreSQL 16, Zod validation, OpenAPI docs (Swagger UI), pino logs, node-cron |
 | Live updates | Server-Sent Events (`GET /api/v1/events`) |
-| Auth | httpOnly JWT cookies with rotating refresh tokens; separate student and staff roles |
+| Auth | httpOnly JWT cookies; one session per device with rotating, hashed refresh tokens; separate student and staff roles |
 | Quality | Vitest + Supertest (backend, against a real database), Vitest + Testing Library (frontend), ESLint, GitHub Actions |
 | Operations | Docker images, docker-compose for the full stack, Prisma migrations, optional Sentry on both ends |
 
@@ -87,7 +87,10 @@ npm run dev                   # http://localhost:5173
 Leave `EMAIL_USER` / `EMAIL_PASS` empty and verification and reset codes are printed in the backend log instead of emailed. For real email with Gmail, use an [App Password](https://support.google.com/accounts/answer/185833).
 
 ### Staff accounts
-Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`.
+Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`. Removing an email from the list signs that account out and stops it signing in again.
+
+### Updating an existing database
+`npm run db:deploy` applies new migrations. After the October 2026 ones everyone signs in again once (sessions became per-device), and the migration stops if two accounts share a roll number: decide which account owns it and fix the other first.
 
 ---
 
@@ -109,14 +112,14 @@ Backend settings are validated at startup (`backend/src/config/env.js`); the ser
 | `DATABASE_URL` | PostgreSQL connection string |
 | `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET` | Token signing secrets (`openssl rand -hex 32`) |
 | `ACCESS_TOKEN_EXPIRY`, `REFRESH_TOKEN_EXPIRY` | Session lengths (default 15m and 10d; the app refreshes silently) |
-| `CORS_ORIGIN` | Comma-separated frontend origins |
-| `ADMIN_EMAILS` | Emails allowed to create staff accounts |
+| `CORS_ORIGIN` | Comma-separated frontend origins; the only other sites allowed to make changes (see Security) |
+| `ADMIN_EMAILS` | Emails that may be staff accounts; removing one takes away its access |
 | `SMTP_HOST`, `SMTP_PORT`, `EMAIL_USER`, `EMAIL_PASS` | Outgoing email |
 | `SPORTS_HEAD_EMAIL` | Receives new tickets by email |
 | `APP_TIMEZONE` | The SAC's time zone (default `Asia/Kolkata`) |
 | `SENTRY_DSN` | Optional error tracking |
 
-Frontend: `VITE_API_BASE_URL`, `VITE_APP_TIMEZONE` and optional `VITE_SENTRY_DSN` (see `frontend/.env.example`).
+Frontend: `VITE_API_BASE_URL`, `VITE_APP_TIMEZONE`, and optional `VITE_SENTRY_DSN` and `VITE_SITE_URL` (absolute URL for link previews; Vercel builds use the production URL if unset). See `frontend/.env.example`.
 
 ---
 
@@ -190,5 +193,15 @@ Defined once in `backend/src/config/policy.js`:
 | Lend duration | 15 minutes to 8 hours |
 | Late-return grace | 10 minutes |
 | Borrowing block | 3 late returns in 30 days, for 7 days; or while anything is overdue |
-| Room bookings | Whole hours, 6:00 to 22:00, up to 2 hours, up to 7 days ahead, 2 upcoming per student |
-| History retention | 90 days |
+| Room bookings | Whole hours, 6:00 to 22:00, up to 2 hours, up to 7 days ahead, 2 upcoming per student; the hour under way can still be booked |
+| Email codes | 6 digits, 5 tries per code, a new code at most once a minute; sign-up codes last 24 hours, reset codes 10 minutes |
+| Unconfirmed sign-ups | Hold nothing (a newer sign-up with the same email, username, phone or roll number replaces them) and are deleted when their code expires |
+| Retention | History and notifications 90 days; sessions end 10 days after their last refresh |
+
+---
+
+## Security
+
+- **Sessions.** Every sign-in is a row in `Session`; only a SHA-256 hash of its refresh token is stored. Each refresh replaces the token, and replaying an old one ends the session. Access tokens name their session, so signing out, a password change (other devices) or reset (all devices), or removal from `ADMIN_EMAILS` takes effect at once. The web app refreshes under a Web Lock so two tabs never send the same token.
+- **Cross-site requests.** Production cookies are `SameSite=None` (the app and API can be on different sites), so the API accepts only JSON bodies and refuses changes whose `Origin` isn't in `CORS_ORIGIN` or the API's own host.
+- **Codes and sign-in.** Rate limits per address on sign-in, sign-up and code endpoints, plus the per-code attempt limit above (counted before comparing, so parallel guesses are capped). Sign-in and code responses don't reveal which emails have accounts.
