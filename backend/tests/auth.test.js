@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { app, createStaff, createStudent, prisma, request, resetDatabase, signInStudent, PASSWORD } from "./helpers.js";
+import { app, cookieValue, createStaff, createStudent, prisma, request, resetDatabase, signInStudent, PASSWORD } from "./helpers.js";
 import { disconnectDB } from "../src/db/index.js";
 
 const registration = {
@@ -71,16 +71,12 @@ describe("student sign-up", () => {
 describe("sessions", () => {
   it("rotates the refresh token and rejects the old one", async () => {
     const student = await createStudent();
-    const agent = await signInStudent(student);
-    const before = (await prisma.user.findUnique({ where: { id: student.id } })).refreshToken;
+    const agent = request.agent(app);
+    const before = cookieValue(await agent.post("/api/v1/users/login").send({ email: student.email, password: PASSWORD }), "refreshToken");
 
-    // Tokens issued in the same second are identical, so wait for a new iat
-    await new Promise((r) => setTimeout(r, 1100));
     const refreshed = await agent.post("/api/v1/users/refresh-token");
     expect(refreshed.status).toBe(200);
-
-    const after = (await prisma.user.findUnique({ where: { id: student.id } })).refreshToken;
-    expect(after).not.toBe(before);
+    expect(cookieValue(refreshed, "refreshToken")).not.toBe(before);
 
     const replay = await request(app).post("/api/v1/users/refresh-token").send({ refreshToken: before });
     expect(replay.status).toBe(401);

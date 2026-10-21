@@ -6,6 +6,7 @@ import { hashPassword } from "../src/utils/auth.js";
 export const PASSWORD = "Test@1234";
 
 const TABLES = [
+  "Session",
   "Notification",
   "TicketEvent",
   "Ticket",
@@ -68,6 +69,12 @@ export const signInStaff = async (staff) => {
   const res = await agent.post("/api/v1/admin/login").send({ email: staff.email, password: PASSWORD });
   if (res.status !== 200) throw new Error(`staff login failed: ${res.status} ${res.body.message}`);
   return agent;
+};
+
+/** The value of a cookie the response sets, e.g. the refresh token */
+export const cookieValue = (res, name) => {
+  const cookie = [].concat(res.headers["set-cookie"] ?? []).find((c) => c.startsWith(`${name}=`));
+  return cookie ? decodeURIComponent(cookie.split(";")[0].slice(name.length + 1)) : null;
 };
 
 /** A finished loan for standing calculations; minutesLate > grace makes it count as late */

@@ -134,15 +134,16 @@ export const runReminders = async (now = new Date()) => ({
   roomsReminded: await remindRoomBookings(now),
 });
 
-/** Deletes rows past their retention date (announcements, equipment history) and sign-ups never confirmed */
+/** Deletes rows past their retention date (announcements, history, sessions) and sign-ups never confirmed */
 export const runCleanup = async (now = new Date()) => {
-  const [announcements, history, unconfirmed] = await Promise.all([
+  const [announcements, history, unconfirmed, sessions] = await Promise.all([
     prisma.announcement.deleteMany({ where: { expireAt: { lte: now } } }),
     prisma.equipmentHistory.deleteMany({ where: { expireAt: { lte: now } } }),
     prisma.user.deleteMany({ where: { isVerified: false, emailVerificationExpires: { lte: now } } }),
+    prisma.session.deleteMany({ where: { expiresAt: { lte: now } } }),
   ]);
   if (announcements.count > 0) publish("announcement.changed", {}, { everyone: true });
-  return { announcements: announcements.count, history: history.count, unconfirmedAccounts: unconfirmed.count };
+  return { announcements: announcements.count, history: history.count, unconfirmedAccounts: unconfirmed.count, sessions: sessions.count };
 };
 
 const tasks = [];

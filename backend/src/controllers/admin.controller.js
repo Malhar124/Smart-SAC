@@ -4,28 +4,13 @@ import { prisma } from "../db/index.js";
 import { env } from "../config/env.js";
 import { publish } from "../lib/events.js";
 import { ADMIN_PUBLIC_FIELDS } from "../middlewares/auth.middleware.js";
-import {
-  cookieOptions,
-  generateAccessToken,
-  generateRefreshToken,
-  hashPassword,
-  isPasswordCorrect,
-  ROLES,
-  verifyRefreshToken,
-} from "../utils/auth.js";
+import { cookieOptions, hashPassword, isPasswordCorrect, ROLES } from "../utils/auth.js";
+import { endSession, rotateSession, startSession } from "../services/session.service.js";
 import { listEquipmentForStaff, listOverdueLoans } from "../services/equipment.service.js";
 import { notifyAllStudents } from "../services/notifications.service.js";
 import { DAY } from "../config/policy.js";
 
 const ok = (res, data, message, status = 200) => res.status(status).json(new ApiResponse(status, data, message));
-
-const issueTokens = async (adminId) => {
-  const admin = await prisma.admin.findUnique({ where: { id: adminId } });
-  const accessToken = generateAccessToken(admin, ROLES.ADMIN);
-  const refreshToken = generateRefreshToken(admin, ROLES.ADMIN);
-  await prisma.admin.update({ where: { id: adminId }, data: { refreshToken } });
-  return { accessToken, refreshToken };
-};
 
 // Only emails listed in ADMIN_EMAILS (comma-separated) may register as staff
 const isAllowedAdminEmail = (email) =>
@@ -63,7 +48,7 @@ export const loginAdmin = async (req, res) => {
     throw new ApiError(401, "That email and password don't match.");
   }
 
-  const { accessToken, refreshToken } = await issueTokens(admin.id);
+  const { accessToken, refreshToken } = await startSession(admin, ROLES.ADMIN);
   return res
     .status(200)
     .cookie("accessToken", accessToken, cookieOptions)
@@ -72,7 +57,7 @@ export const loginAdmin = async (req, res) => {
 };
 
 export const logoutAdmin = async (req, res) => {
-  await prisma.admin.update({ where: { id: req.user.id }, data: { refreshToken: null } });
+  await endSession(req.sessionId);
   return res
     .status(200)
     .clearCookie("accessToken", cookieOptions)
@@ -84,18 +69,8 @@ export const refreshAccessToken = async (req, res) => {
   const incoming = req.cookies?.refreshToken || req.body?.refreshToken;
   if (!incoming) throw new ApiError(401, "Sign in again.");
 
-  let decoded;
-  try {
-    decoded = verifyRefreshToken(incoming);
-  } catch {
-    throw new ApiError(401, "Your session expired. Sign in again.");
-  }
-  if (decoded.role !== ROLES.ADMIN) throw new ApiError(401, "Sign in again.");
-
-  const admin = await prisma.admin.findUnique({ where: { id: decoded._id } });
-  if (!admin || admin.refreshToken !== incoming) throw new ApiError(401, "Your session expired. Sign in again.");
-
-  const { accessToken, refreshToken } = await issueTokens(admin.id);
+  const { tokens } = await rotateSession(incoming, ROLES.ADMIN);
+  const { accessToken, refreshToken } = tokens;
   return res
     .status(200)
     .cookie("accessToken", accessToken, cookieOptions)

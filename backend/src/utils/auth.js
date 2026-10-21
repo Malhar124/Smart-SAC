@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { randomInt } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { env } from "../config/env.js";
 
 export const ROLES = { USER: "user", ADMIN: "admin" };
@@ -26,8 +26,9 @@ export const cookieOptions = {
   path: "/",
 };
 
-// `role` is embedded in both tokens so a user token can never pass the admin middleware (and vice versa)
-export const generateAccessToken = (account, role = ROLES.USER) => {
+// `role` is embedded in both tokens so a user token can never pass the admin middleware (and vice versa).
+// `sid` names the Session row; both tokens stop working when it's deleted.
+export const generateAccessToken = (account, role, sessionId) => {
   return jwt.sign(
     {
       _id: account.id,
@@ -35,14 +36,18 @@ export const generateAccessToken = (account, role = ROLES.USER) => {
       username: account.username,
       fullname: account.fullname,
       role,
+      sid: sessionId,
     },
     env.ACCESS_TOKEN_SECRET,
     { expiresIn: env.ACCESS_TOKEN_EXPIRY }
   );
 };
 
-export const generateRefreshToken = (account, role = ROLES.USER) => {
-  return jwt.sign({ _id: account.id, role }, env.REFRESH_TOKEN_SECRET, { expiresIn: env.REFRESH_TOKEN_EXPIRY });
+// `jti` makes every refresh token unique, even two issued in the same second
+export const generateRefreshToken = (account, role, sessionId) => {
+  return jwt.sign({ _id: account.id, role, sid: sessionId, jti: randomUUID() }, env.REFRESH_TOKEN_SECRET, {
+    expiresIn: env.REFRESH_TOKEN_EXPIRY,
+  });
 };
 
 export const verifyRefreshToken = (token) => jwt.verify(token, env.REFRESH_TOKEN_SECRET);

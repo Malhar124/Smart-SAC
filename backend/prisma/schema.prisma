@@ -55,14 +55,14 @@ enum NotificationType {
 }
 
 model Admin {
-  id           String  @id @default(cuid())
-  email        String  @unique
+  id       String  @id @default(cuid())
+  email    String  @unique
   // Shown on history, loans and ticket replies so students and staff can see who acted
-  name         String?
-  password     String?
-  refreshToken String?
+  name     String?
+  password String?
 
   // Relations
+  sessions              Session[]
   loansIssued           Loan[]             @relation("LoanIssuedBy")
   loansReturned         Loan[]             @relation("LoanReturnedTo")
   equipmentChanges      EquipmentHistory[]
@@ -90,12 +90,12 @@ model User {
   // Upper-case, set at sign-up and not editable: loans and borrowing blocks are kept by roll number
   roll_no                   String    @unique
   password                  String
-  refreshToken              String?
   passwordResetToken        String?
   passwordResetExpires      DateTime?
   passwordResetAttempts     Int       @default(0)
 
   // Relations
+  sessions           Session[]
   games              UserGameRating[]
   messagesSent       Message[]          @relation("MessagesSent")
   messagesReceived   Message[]          @relation("MessagesReceived")
@@ -110,6 +110,26 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// One signed-in browser or device. Its refresh token is stored hashed and replaced on every refresh.
+// Signing out, changing or resetting the password, or replaying an old refresh token deletes the row,
+// and access tokens stop working with it, so a session can be ended at once.
+model Session {
+  id        String   @id
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminId   String?
+  admin     Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([adminId])
+  @@index([expiresAt])
 }
 
 model UserGameRating {

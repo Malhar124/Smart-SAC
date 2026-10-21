@@ -5,16 +5,8 @@ import { prisma } from "../db/index.js";
 import { publish } from "../lib/events.js";
 import { deliverCode } from "../utils/mail.js";
 import { USER_PUBLIC_FIELDS } from "../middlewares/auth.middleware.js";
-import {
-  cookieOptions,
-  generateAccessToken,
-  generateOtp,
-  generateRefreshToken,
-  hashPassword,
-  isPasswordCorrect,
-  normalizeRollNo,
-  verifyRefreshToken,
-} from "../utils/auth.js";
+import { cookieOptions, generateOtp, hashPassword, isPasswordCorrect, normalizeRollNo, ROLES } from "../utils/auth.js";
+import { endSession, endSessionsFor, rotateSession, startSession } from "../services/session.service.js";
 import { getStanding } from "../services/standing.service.js";
 import { listEquipmentForStudent } from "../services/equipment.service.js";
 import { countOpenTicketsForUser } from "../services/tickets.service.js";
@@ -58,14 +50,6 @@ const issueCode = async (user, kind) => {
     data: { [f.token]: code, [f.expires]: new Date(Date.now() + f.ttl), [f.attempts]: 0 },
   });
   return code;
-};
-
-const issueTokens = async (userId) => {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
-  await prisma.user.update({ where: { id: userId }, data: { refreshToken } });
-  return { accessToken, refreshToken };
 };
 
 const publicUser = (id) => prisma.user.findUnique({ where: { id }, select: USER_PUBLIC_FIELDS });
@@ -178,7 +162,7 @@ export const loginUser = async (req, res) => {
     ]);
   }
 
-  const { accessToken, refreshToken } = await issueTokens(user.id);
+  const { accessToken, refreshToken } = await startSession(user, ROLES.USER);
   return res
     .status(200)
     .cookie("accessToken", accessToken, cookieOptions)
@@ -187,7 +171,7 @@ export const loginUser = async (req, res) => {
 };
 
 export const logoutUser = async (req, res) => {
-  await prisma.user.update({ where: { id: req.user.id }, data: { refreshToken: null } });
+  await endSession(req.sessionId);
   return res
     .status(200)
     .clearCookie("accessToken", cookieOptions)
@@ -199,19 +183,8 @@ export const refreshAccessToken = async (req, res) => {
   const incoming = req.cookies?.refreshToken || req.body?.refreshToken;
   if (!incoming) throw new ApiError(401, "Sign in again.");
 
-  let decoded;
-  try {
-    decoded = verifyRefreshToken(incoming);
-  } catch {
-    throw new ApiError(401, "Your session expired. Sign in again.");
-  }
-  if (decoded.role !== "user") throw new ApiError(401, "Sign in again.");
-
-  const user = await prisma.user.findUnique({ where: { id: decoded._id } });
-  // A token that no longer matches the stored one was rotated or revoked
-  if (!user || user.refreshToken !== incoming) throw new ApiError(401, "Your session expired. Sign in again.");
-
-  const { accessToken, refreshToken } = await issueTokens(user.id);
+  const { tokens } = await rotateSession(incoming, ROLES.USER);
+  const { accessToken, refreshToken } = tokens;
   return res
     .status(200)
     .cookie("accessToken", accessToken, cookieOptions)
@@ -230,7 +203,9 @@ export const changeCurrentPassword = async (req, res) => {
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { password: await hashPassword(newPassword) } });
-  return res.status(200).json(new ApiResponse(200, {}, "Password changed"));
+  // Anyone signed in elsewhere with the old password is signed out; this device stays signed in
+  await endSessionsFor({ userId: user.id }, { except: req.sessionId });
+  return res.status(200).json(new ApiResponse(200, {}, "Password changed. You've been signed out on other devices."));
 };
 
 export const forgotPassword = async (req, res) => {
@@ -263,10 +238,9 @@ export const resetPassword = async (req, res) => {
       passwordResetToken: null,
       passwordResetExpires: null,
       passwordResetAttempts: 0,
-      // Signs out every other session
-      refreshToken: null,
     },
   });
+  await endSessionsFor({ userId });
   return res.status(200).json(new ApiResponse(200, {}, "Password reset. Sign in with your new password."));
 };
 

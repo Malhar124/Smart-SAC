@@ -55,6 +55,23 @@ describe("api client", () => {
     expect(refreshCalls).toHaveLength(1);
   });
 
+  it("refreshes inside a cross-tab lock, so two tabs never send the same refresh token", async () => {
+    const request = vi.fn((_name: string, callback: () => Promise<boolean>) => callback());
+    vi.stubGlobal("navigator", { locks: { request } });
+    let refreshed = false;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/users/refresh-token")) {
+        refreshed = true;
+        return json(200, { success: true, data: {} });
+      }
+      return refreshed ? json(200, { success: true, data: "ok" }) : json(401, { success: false, message: "expired" });
+    });
+
+    await expect(api.get("/users/dashboard")).resolves.toBe("ok");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][0]).toBe("smart-sac-session-refresh");
+  });
+
   it("signs out when the refresh fails", async () => {
     const expired = vi.fn();
     onSessionExpired(expired);

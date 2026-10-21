@@ -55,18 +55,24 @@ export const onSessionExpired = (handler: (() => void) | null) => {
 
 const refreshPath = (kind: AccountKind) => (kind === "admin" ? "/admin/refresh-token" : "/users/refresh-token");
 
+const postRefresh = (kind: AccountKind) =>
+  fetch(`${API_BASE_URL}${refreshPath(kind)}`, { method: "POST", credentials: "include" })
+    .then((res) => res.ok)
+    .catch(() => false);
+
 /**
  * Rotate the session cookies. Concurrent 401s share one refresh request, so a page that fires
  * five queries at once after the access token expires refreshes once, not five times.
+ * Other tabs take turns through a Web Lock: the server ends a session when a refresh token that was
+ * already used comes back, so two tabs must never send the same one. The tab that waits sends the
+ * newer cookie the first tab received.
  */
 export const refreshSession = (kind: AccountKind | null = accountKind): Promise<boolean> => {
   if (!kind) return Promise.resolve(false);
-  refreshInFlight ??= fetch(`${API_BASE_URL}${refreshPath(kind)}`, { method: "POST", credentials: "include" })
-    .then((res) => res.ok)
-    .catch(() => false)
-    .finally(() => {
-      refreshInFlight = null;
-    });
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  refreshInFlight ??= (locks ? locks.request("smart-sac-session-refresh", () => postRefresh(kind)) : postRefresh(kind)).finally(() => {
+    refreshInFlight = null;
+  });
   return refreshInFlight;
 };
 

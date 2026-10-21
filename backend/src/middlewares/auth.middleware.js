@@ -32,50 +32,48 @@ const decodeAccessToken = (req) => {
   }
 };
 
-const loadUser = async (id) => {
-  const user = await prisma.user.findUnique({ where: { id }, select: USER_PUBLIC_FIELDS });
-  if (!user) throw new ApiError(401, "Invalid access token.");
-  // Controllers written before the Prisma move read req.user._id
-  user._id = user.id;
-  return user;
+/**
+ * The account behind an access token, read through its session in one query. A token whose session
+ * was ended (sign-out, password change, replayed refresh token) stops working at once, not when it expires.
+ */
+const loadAccount = async (decoded) => {
+  if (!decoded.sid) throw new ApiError(401, "Your session expired.");
+  const session = await prisma.session.findUnique({
+    where: { id: decoded.sid },
+    select: { user: { select: USER_PUBLIC_FIELDS }, admin: { select: ADMIN_PUBLIC_FIELDS } },
+  });
+  const account = decoded.role === ROLES.ADMIN ? session?.admin : session?.user;
+  if (!account) throw new ApiError(401, "Your session ended. Sign in again.");
+  return account;
 };
 
-const loadAdmin = async (id) => {
-  const admin = await prisma.admin.findUnique({ where: { id }, select: ADMIN_PUBLIC_FIELDS });
-  if (!admin) throw new ApiError(401, "Invalid access token.");
-  admin._id = admin.id;
-  return admin;
+/** Sets req.user (the student or staff member), req.account and req.sessionId */
+const authenticate = async (req, decoded) => {
+  req.user = await loadAccount(decoded);
+  req.account = { kind: decoded.role === ROLES.ADMIN ? "admin" : "user", id: req.user.id };
+  req.sessionId = decoded.sid;
 };
 
-/** Students only. Sets req.user and req.account. */
+/** Students only */
 export const requireUser = async (req, res, next) => {
   const decoded = decodeAccessToken(req);
   if (decoded?.role !== ROLES.USER) throw new ApiError(401, "Sign in with a student account.");
-  req.user = await loadUser(decoded._id || decoded.id);
-  req.account = { kind: "user", id: req.user.id };
+  await authenticate(req, decoded);
   next();
 };
 
-/** SAC staff only. Sets req.user (the admin) and req.account. */
+/** SAC staff only */
 export const requireAdmin = async (req, res, next) => {
   const decoded = decodeAccessToken(req);
   if (decoded?.role !== ROLES.ADMIN) throw new ApiError(401, "Sign in with a staff account.");
-  req.user = await loadAdmin(decoded._id || decoded.id);
-  req.account = { kind: "admin", id: req.user.id };
+  await authenticate(req, decoded);
   next();
 };
 
-/** Either kind of account, e.g. the live events stream. */
+/** Either kind of account, e.g. the live events stream */
 export const requireAccount = async (req, res, next) => {
   const decoded = decodeAccessToken(req);
-  if (decoded?.role === ROLES.ADMIN) {
-    req.user = await loadAdmin(decoded._id || decoded.id);
-    req.account = { kind: "admin", id: req.user.id };
-  } else if (decoded?.role === ROLES.USER) {
-    req.user = await loadUser(decoded._id || decoded.id);
-    req.account = { kind: "user", id: req.user.id };
-  } else {
-    throw new ApiError(401, "Invalid access token.");
-  }
+  if (decoded?.role !== ROLES.ADMIN && decoded?.role !== ROLES.USER) throw new ApiError(401, "Invalid access token.");
+  await authenticate(req, decoded);
   next();
 };
