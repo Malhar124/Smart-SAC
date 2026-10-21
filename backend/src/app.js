@@ -8,6 +8,7 @@ import { logger } from "./lib/logger.js";
 import { prisma } from "./db/index.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
+import { requireTrustedOrigin } from "./middlewares/origin.middleware.js";
 import userRouter from "./routes/user.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import eventsRouter from "./routes/events.routes.js";
@@ -31,9 +32,10 @@ app.use(
   })
 );
 app.use(cors({ origin: env.corsOrigins, credentials: true }));
+// JSON bodies only: an HTML form on another site can post url-encoded bodies without a CORS preflight
 app.use(express.json({ limit: "100kb" }));
-app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 app.use(cookieParser());
+app.use("/api", requireTrustedOrigin);
 
 app.get("/api/health", async (req, res) => {
   try {
