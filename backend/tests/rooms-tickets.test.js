@@ -2,7 +2,8 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createItem, createStaff, createStudent, prisma, resetDatabase, signInStaff, signInStudent } from "./helpers.js";
 import { disconnectDB } from "../src/db/index.js";
 import { zonedParts, zonedTimeToDate } from "../src/lib/time.js";
-import { ROOM_MAX_UPCOMING_BOOKINGS } from "../src/config/policy.js";
+import { bookRoom } from "../src/services/rooms.service.js";
+import { DAY, MINUTE, ROOM_MAX_UPCOMING_BOOKINGS } from "../src/config/policy.js";
 
 beforeEach(resetDatabase);
 afterAll(disconnectDB);
@@ -51,6 +52,28 @@ describe("rooms", () => {
       expect((await agent.post("/api/v1/users/book-room").send({ roomId: room.id, startsAt: tomorrowAt(8 + i * 2), hours: 1 })).status).toBe(201);
     }
     expect((await agent.post("/api/v1/users/book-room").send({ roomId: room.id, startsAt: tomorrowAt(15), hours: 1 })).status).toBe(409);
+  });
+
+  it("books the slot that's under way, even after half past the hour", async () => {
+    // At 10:45 SAC time the 10:00 slot is still running. India is UTC+5:30, so rounding "this hour"
+    // down in UTC gave 10:30 and refused it.
+    const room = await prisma.room.create({ data: { name: "Band Room", capacity: 8 } });
+    const student = await createStudent();
+    const t = zonedParts(new Date(Date.now() + DAY));
+    const tenAm = zonedTimeToDate({ year: t.year, month: t.month, day: t.day, hour: 10 });
+    const now = new Date(tenAm.getTime() + 45 * MINUTE);
+
+    const booking = await bookRoom({ userId: student.id, roomId: room.id, startsAt: tenAm.toISOString(), hours: 1, now });
+    expect(booking.startsAt).toEqual(tenAm);
+    const nineAm = new Date(tenAm.getTime() - 60 * MINUTE).toISOString();
+    await expect(bookRoom({ userId: student.id, roomId: room.id, startsAt: nineAm, hours: 1, now })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("won't let one student book two rooms at the same time by sending both requests together", async () => {
+    const rooms = await Promise.all(["Room A", "Room B"].map((name) => prisma.room.create({ data: { name, capacity: 5 } })));
+    const agent = await signInStudent(await createStudent());
+    const results = await Promise.all(rooms.map((room) => agent.post("/api/v1/users/book-room").send({ roomId: room.id, startsAt: tomorrowAt(16), hours: 1 })));
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
   });
 
   it("notifies the student when staff cancel their booking", async () => {

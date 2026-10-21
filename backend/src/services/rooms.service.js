@@ -3,7 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { publish } from "../lib/events.js";
 import { notify } from "./notifications.service.js";
 import { env } from "../config/env.js";
-import { formatDayClock, parseDateKey, startOfLocalDay, toDateKey, zonedParts, zonedTimeToDate } from "../lib/time.js";
+import { formatDayClock, parseDateKey, startOfLocalDay, startOfLocalHour, toDateKey, zonedParts, zonedTimeToDate } from "../lib/time.js";
 import {
   DAY,
   HOUR,
@@ -82,8 +82,7 @@ export const listUpcomingBookingsForUser = async (userId, now = new Date()) => {
 };
 
 /** Book whole-hour slots inside opening hours, up to ROOM_BOOKING_DAYS_AHEAD days ahead */
-export const bookRoom = async ({ userId, roomId, startsAt, hours, purpose }) => {
-  const now = new Date();
+export const bookRoom = async ({ userId, roomId, startsAt, hours, purpose, now = new Date() }) => {
   const start = new Date(startsAt);
   const end = new Date(start.getTime() + hours * HOUR);
   const local = zonedParts(start);
@@ -93,14 +92,16 @@ export const bookRoom = async ({ userId, roomId, startsAt, hours, purpose }) => 
     throw new ApiError(400, `Rooms can be booked between ${SAC_OPEN_HOUR}:00 and ${SAC_CLOSE_HOUR}:00.`);
   }
   if (end <= now) throw new ApiError(400, "That time has already passed.");
-  const startOfThisHour = new Date(Math.floor(now.getTime() / HOUR) * HOUR);
-  if (start < startOfThisHour) throw new ApiError(400, "That time has already passed.");
+  // The slot that's under way can still be booked
+  if (start < startOfLocalHour(now)) throw new ApiError(400, "That time has already passed.");
   if (start.getTime() > startOfLocalDay(now).getTime() + (ROOM_BOOKING_DAYS_AHEAD + 1) * DAY) {
     throw new ApiError(400, `Rooms can be booked up to ${ROOM_BOOKING_DAYS_AHEAD} days ahead.`);
   }
 
   const booking = await prisma.$transaction(async (tx) => {
-    // Serialise bookings per room so two students can't take the same slot
+    // Serialise bookings per student (their limits span rooms), then per room so two students can't
+    // take the same slot. Always in this order, so two bookings can't deadlock.
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     const locked = await tx.$queryRaw`SELECT id FROM "Room" WHERE id = ${roomId} FOR UPDATE`;
     if (locked.length === 0) throw new ApiError(404, "That room doesn't exist.");
     const room = await tx.room.findUnique({ where: { id: roomId } });

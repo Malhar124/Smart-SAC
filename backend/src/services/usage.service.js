@@ -1,16 +1,10 @@
 import { prisma } from "../db/index.js";
 import { ApiError } from "../utils/ApiError.js";
-import { zonedParts, zonedTimeToDate } from "../lib/time.js";
+import { startOfLocalHour, zonedParts } from "../lib/time.js";
 import { DAY, HOUR, MINUTE, SAC_CLOSE_HOUR, SAC_OPEN_HOUR } from "../config/policy.js";
 
 /** Below this many checkouts in the window, the chart would mislead; the page says so instead */
 export const MIN_LOANS_FOR_CHART = 10;
-
-/** Start of the local clock hour containing `ms`. Not a UTC floor: India is UTC+5:30, so the two differ. */
-const localHourStart = (ms) => {
-  const p = zonedParts(new Date(ms));
-  return zonedTimeToDate({ year: p.year, month: p.month, day: p.day, hour: p.hour }).getTime();
-};
 
 const median = (values) => {
   if (values.length === 0) return null;
@@ -55,7 +49,7 @@ export const getUsage = async ({ days, gameId }) => {
     const start = Math.max(loan.issuedAt.getTime(), from.getTime());
     const end = Math.min((loan.returnedAt ?? to).getTime(), to.getTime());
     // Walk the local clock hours the loan touched, starting from the hour it began in
-    for (let t = localHourStart(start); t < end; t += HOUR) {
+    for (let t = startOfLocalHour(new Date(start)).getTime(); t < end; t += HOUR) {
       loanHours[zonedParts(new Date(t)).hour] += 1;
     }
   }

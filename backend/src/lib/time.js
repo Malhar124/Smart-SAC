@@ -63,6 +63,12 @@ export const startOfLocalDay = (date, timeZone = env.APP_TIMEZONE) => {
   return zonedTimeToDate({ year: p.year, month: p.month, day: p.day }, timeZone);
 };
 
+/** Start of the local clock hour containing `date`. Not a UTC floor: India is UTC+5:30, so the two differ. */
+export const startOfLocalHour = (date, timeZone = env.APP_TIMEZONE) => {
+  const p = zonedParts(date, timeZone);
+  return zonedTimeToDate({ year: p.year, month: p.month, day: p.day, hour: p.hour }, timeZone);
+};
+
 /** "6:30 PM" in the SAC's time zone, for notification text */
 export const formatClock = (date, timeZone = env.APP_TIMEZONE) =>
   new Intl.DateTimeFormat("en-IN", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date).toUpperCase();
