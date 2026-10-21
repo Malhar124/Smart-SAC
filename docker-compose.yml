@@ -38,7 +38,7 @@ services:
       # Override these in a .env file next to this one for anything beyond a local demo
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-local-demo-access-secret-change-me-0123456789}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-local-demo-refresh-secret-change-me-0123456789}
-      ADMIN_EMAILS: ${ADMIN_EMAILS:-desk@iiita.ac.in}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-desk@iiita.ac.in,office@iiita.ac.in}
       SMTP_HOST: ${SMTP_HOST:-}
       EMAIL_USER: ${EMAIL_USER:-}
       EMAIL_PASS: ${EMAIL_PASS:-}

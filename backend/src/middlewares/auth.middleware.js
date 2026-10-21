@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { ApiError } from "../utils/ApiError.js";
 import { prisma } from "../db/index.js";
-import { ROLES } from "../utils/auth.js";
+import { isStaffEmail, ROLES } from "../utils/auth.js";
 import { env } from "../config/env.js";
 
 export const USER_PUBLIC_FIELDS = {
@@ -44,6 +44,9 @@ const loadAccount = async (decoded) => {
   });
   const account = decoded.role === ROLES.ADMIN ? session?.admin : session?.user;
   if (!account) throw new ApiError(401, "Your session ended. Sign in again.");
+  if (decoded.role === ROLES.ADMIN && !isStaffEmail(account.email)) {
+    throw new ApiError(401, "This account isn't on the staff list any more.");
+  }
   return account;
 };
 

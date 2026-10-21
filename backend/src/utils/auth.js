@@ -52,5 +52,12 @@ export const generateRefreshToken = (account, role, sessionId) => {
 
 export const verifyRefreshToken = (token) => jwt.verify(token, env.REFRESH_TOKEN_SECRET);
 
+/** Staff accounts work only while their email is in ADMIN_EMAILS; removing it takes away access */
+export const isStaffEmail = (email) =>
+  env.ADMIN_EMAILS.split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(String(email).toLowerCase());
+
 /** Roll numbers are stored upper-case so "iit2023042" and "IIT2023042" are the same student */
 export const normalizeRollNo = (rollNo) => rollNo.trim().toUpperCase();

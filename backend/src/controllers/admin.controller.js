@@ -1,10 +1,9 @@
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { prisma } from "../db/index.js";
-import { env } from "../config/env.js";
 import { publish } from "../lib/events.js";
 import { ADMIN_PUBLIC_FIELDS } from "../middlewares/auth.middleware.js";
-import { cookieOptions, hashPassword, isPasswordCorrect, ROLES } from "../utils/auth.js";
+import { cookieOptions, hashPassword, isPasswordCorrect, isStaffEmail, ROLES } from "../utils/auth.js";
 import { endSession, rotateSession, startSession } from "../services/session.service.js";
 import { listEquipmentForStaff, listOverdueLoans } from "../services/equipment.service.js";
 import { notifyAllStudents } from "../services/notifications.service.js";
@@ -12,18 +11,11 @@ import { DAY } from "../config/policy.js";
 
 const ok = (res, data, message, status = 200) => res.status(status).json(new ApiResponse(status, data, message));
 
-// Only emails listed in ADMIN_EMAILS (comma-separated) may register as staff
-const isAllowedAdminEmail = (email) =>
-  env.ADMIN_EMAILS.split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean)
-    .includes(email);
-
 // ---------------------------------------------------------------- account
 
 export const registerAdmin = async (req, res) => {
   const { email, password, name } = req.body;
-  if (!isAllowedAdminEmail(email)) {
+  if (!isStaffEmail(email)) {
     throw new ApiError(403, "This email isn't on the staff list. Ask the SAC office to add it to ADMIN_EMAILS.");
   }
 
@@ -47,6 +39,10 @@ export const loginAdmin = async (req, res) => {
   if (!admin || !(await isPasswordCorrect(password, admin.password))) {
     throw new ApiError(401, "That email and password don't match.");
   }
+  // Checked after the password, so the answer doesn't tell strangers which emails are staff
+  if (!isStaffEmail(admin.email)) {
+    throw new ApiError(403, "This email isn't on the staff list any more. Ask the SAC office to add it to ADMIN_EMAILS.");
+  }
 
   const { accessToken, refreshToken } = await startSession(admin, ROLES.ADMIN);
   return res
@@ -69,7 +65,7 @@ export const refreshAccessToken = async (req, res) => {
   const incoming = req.cookies?.refreshToken || req.body?.refreshToken;
   if (!incoming) throw new ApiError(401, "Sign in again.");
 
-  const { tokens } = await rotateSession(incoming, ROLES.ADMIN);
+  const { tokens } = await rotateSession(incoming, ROLES.ADMIN, { canSignIn: (admin) => isStaffEmail(admin.email) });
   const { accessToken, refreshToken } = tokens;
   return res
     .status(200)
@@ -81,6 +77,11 @@ export const refreshAccessToken = async (req, res) => {
 export const getCurrentAdmin = async (req, res) => ok(res, req.user, "Current staff member");
 
 export const updateAccountDetails = async (req, res) => {
+  if (req.body.email && !isStaffEmail(req.body.email)) {
+    throw new ApiError(400, "That email isn't on the staff list.", [
+      { path: "email", message: "Only emails in ADMIN_EMAILS can be staff accounts. Ask the SAC office to add it first." },
+    ]);
+  }
   const admin = await prisma.admin.update({ where: { id: req.user.id }, data: req.body, select: ADMIN_PUBLIC_FIELDS });
   return ok(res, admin, "Account saved");
 };

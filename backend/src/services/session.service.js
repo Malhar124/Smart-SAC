@@ -29,9 +29,10 @@ export const startSession = async (account, role) => {
 /**
  * Swap a refresh token for a new pair. Only the session's latest refresh token works: an older one
  * coming back means someone kept a copy, so the session is ended for everyone holding it.
+ * `canSignIn(account)` can end the session too (staff removed from the list).
  * Returns the tokens and the account they're for.
  */
-export const rotateSession = async (incoming, role) => {
+export const rotateSession = async (incoming, role, { canSignIn = () => true } = {}) => {
   const expired = new ApiError(401, "Your session expired. Sign in again.");
   let decoded;
   try {
@@ -46,7 +47,7 @@ export const rotateSession = async (incoming, role) => {
   if (!session || !account || session.expiresAt <= new Date()) throw expired;
 
   const presented = hashToken(incoming);
-  if (session.tokenHash !== presented) {
+  if (session.tokenHash !== presented || !canSignIn(account)) {
     await endSession(session.id);
     throw expired;
   }
