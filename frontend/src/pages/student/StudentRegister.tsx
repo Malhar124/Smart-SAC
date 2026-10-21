@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { registerSchema, serverFieldErrors, validate, type FieldErrors } from "@/lib/schemas";
+import { registerSchema, rollNoFromEmail, serverFieldErrors, validate, type FieldErrors } from "@/lib/schemas";
 import AuthLayout from "@/components/AuthLayout";
 import { Field, fieldProps } from "@/components/Field";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,13 @@ const StudentRegister = () => {
   const [pending, setPending] = useState(false);
 
   const set = (key: keyof typeof empty) => (e: React.ChangeEvent<HTMLInputElement>) => setValues({ ...values, [key]: e.target.value });
+
+  // A student email is the roll number, so fill it in, unless the person already typed a different one
+  const setEmail = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const email = e.target.value;
+    const untouched = values.roll_no === "" || values.roll_no === rollNoFromEmail(values.email);
+    setValues({ ...values, email, roll_no: untouched ? (rollNoFromEmail(email) ?? "") : values.roll_no });
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -61,7 +68,7 @@ const StudentRegister = () => {
             type="email"
             autoComplete="email"
             value={values.email}
-            onChange={set("email")}
+            onChange={setEmail}
             placeholder="iit2023001@iiita.ac.in"
             disabled={pending}
           />
@@ -79,8 +86,8 @@ const StudentRegister = () => {
               disabled={pending}
             />
           </Field>
-          <Field id="roll_no" label="Roll number" error={errors.roll_no}>
-            <Input {...fieldProps("roll_no", errors.roll_no)} value={values.roll_no} onChange={set("roll_no")} placeholder="IIT2023001" disabled={pending} />
+          <Field id="roll_no" label="Roll number" error={errors.roll_no} hint="Can't be changed later">
+            <Input {...fieldProps("roll_no", errors.roll_no, true)} value={values.roll_no} onChange={set("roll_no")} placeholder="IIT2023001" disabled={pending} />
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">

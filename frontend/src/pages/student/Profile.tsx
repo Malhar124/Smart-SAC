@@ -27,7 +27,6 @@ interface GameRating {
 interface FormState {
   fullname: string;
   phone_number: string;
-  roll_no: string;
   games: GameRating[];
   achievements: string[];
 }
@@ -35,7 +34,6 @@ interface FormState {
 const fromProfile = (data: CurrentStudent): FormState => ({
   fullname: data.userDetails.fullname,
   phone_number: data.userDetails.phone_number,
-  roll_no: data.userDetails.roll_no,
   games: data.userDetails.games.map((g) => ({ game: g.game, rating: g.rating })),
   achievements: data.userDetails.achievements,
 });
@@ -167,7 +165,6 @@ const StudentProfile = () => {
 
   const fields = [
     { key: "fullname", label: "Full name", type: "text" },
-    { key: "roll_no", label: "Roll number", type: "text" },
     { key: "phone_number", label: "Phone", type: "tel" },
   ] as const;
 
@@ -260,6 +257,9 @@ const StudentProfile = () => {
                     />
                   </Field>
                 ))}
+                <p className="sm:col-span-2 text-sm text-muted-foreground">
+                  Your email and roll number ({profile.roll_no}) can't be changed here. If the roll number is wrong, ask at the SAC desk.
+                </p>
               </div>
             ) : (
               <dl className="divide-y divide-border border-y border-border">

@@ -11,20 +11,28 @@ const { get, post } = routes;
 
 // ---------------------------------------------------------------- schemas
 
-const RegisterBody = z.object({
-  fullname: v.shortText("Full name", 80),
-  username: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(3, "Usernames are at least 3 characters")
-    .max(30, "Usernames are at most 30 characters")
-    .regex(/^[a-z0-9_.]+$/, "Use only letters, numbers, dots and underscores"),
-  email: v.iiitaEmail,
-  phone_number: v.phone,
-  roll_no: v.rollNo,
-  password: v.password,
-});
+const RegisterBody = z
+  .object({
+    fullname: v.shortText("Full name", 80),
+    username: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(3, "Usernames are at least 3 characters")
+      .max(30, "Usernames are at most 30 characters")
+      .regex(/^[a-z0-9_.]+$/, "Use only letters, numbers, dots and underscores"),
+    email: v.iiitaEmail,
+    phone_number: v.phone,
+    roll_no: v.rollNo,
+    password: v.password,
+  })
+  .superRefine((b, ctx) => {
+    // The roll number can't be changed later, so a student email has to match it now
+    const fromEmail = v.rollNoFromEmail(b.email);
+    if (fromEmail && typeof b.roll_no === "string" && b.roll_no !== fromEmail) {
+      ctx.addIssue({ code: "custom", path: ["roll_no"], message: `Your email says your roll number is ${fromEmail}` });
+    }
+  });
 
 const EmailBody = z.object({ email: v.email });
 const EmailCodeBody = z.object({ email: v.email, token: v.otp });
@@ -44,11 +52,11 @@ const ResetPasswordBody = z
   .object({ email: v.email, token: v.otp, newPassword: v.password, confirmPassword: z.string() })
   .refine((b) => b.newPassword === b.confirmPassword, { path: ["confirmPassword"], message: "The passwords don't match" });
 
+// No roll number: it's fixed at sign-up because loans and borrowing blocks are kept by it
 const UpdateProfileBody = z
   .object({
     fullname: v.shortText("Full name", 80).optional(),
     phone_number: v.phone.optional(),
-    roll_no: v.rollNo.optional(),
     achievements: z.array(v.shortText("Achievement", 140)).max(20, "Keep it to 20 achievements").optional(),
     games: z
       .array(z.object({ game: v.id, rating: z.number().int().min(0, "Ratings go from 0 to 5").max(5, "Ratings go from 0 to 5") }))

@@ -33,6 +33,12 @@ export const rollNo = z
   .regex(/^[A-Za-z0-9-]+$/, "Roll numbers use only letters, numbers and dashes")
   .transform((v) => v.toUpperCase());
 
+/** Student emails at IIITA are the roll number (iit2023001@iiita.ac.in); null for other addresses */
+export const rollNoFromEmail = (email: string) => {
+  const local = email.trim().split("@")[0];
+  return /^[a-z]{3}\d{7}$/i.test(local) ? local.toUpperCase() : null;
+};
+
 export const otp = z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code");
 
 const required = (label: string, max: number) =>
@@ -54,7 +60,13 @@ export const registerSchema = z
     password,
     confirmPassword: z.string(),
   })
-  .refine((v) => v.password === v.confirmPassword, { path: ["confirmPassword"], message: "The passwords don't match" });
+  .refine((v) => v.password === v.confirmPassword, { path: ["confirmPassword"], message: "The passwords don't match" })
+  .superRefine((v, ctx) => {
+    const fromEmail = rollNoFromEmail(v.email);
+    if (fromEmail && v.roll_no !== fromEmail) {
+      ctx.addIssue({ code: "custom", path: ["roll_no"], message: `Your email says your roll number is ${fromEmail}` });
+    }
+  });
 
 export const studentLoginSchema = z.object({
   email: z.string().trim().min(1, "Enter your email or username"),
@@ -105,10 +117,10 @@ export const roomSchema = z.object({
   description: z.string().trim().max(200, "Keep it under 200 characters").optional(),
 });
 
+// The roll number isn't here: it's fixed at sign-up because loans and borrowing blocks are kept by it
 export const profileSchema = z.object({
   fullname: required("Full name", 80),
   phone_number: phone,
-  roll_no: rollNo,
 });
 
 export type FieldErrors = Record<string, string>;

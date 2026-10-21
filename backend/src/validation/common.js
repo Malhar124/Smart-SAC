@@ -33,6 +33,12 @@ export const rollNo = z
   .regex(/^[A-Za-z0-9-]+$/, "Roll numbers use only letters, numbers and dashes")
   .transform((value) => value.toUpperCase());
 
+/** Student emails at IIITA are the roll number (iit2023001@iiita.ac.in); null for other addresses */
+export const rollNoFromEmail = (email) => {
+  const local = String(email).split("@")[0];
+  return /^[a-z]{3}\d{7}$/i.test(local) ? local.toUpperCase() : null;
+};
+
 export const otp = z
   .string()
   .trim()

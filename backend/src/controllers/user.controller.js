@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { prisma } from "../db/index.js";
@@ -18,10 +19,46 @@ import { getStanding } from "../services/standing.service.js";
 import { listEquipmentForStudent } from "../services/equipment.service.js";
 import { countOpenTicketsForUser } from "../services/tickets.service.js";
 import { listUpcomingBookingsForUser } from "../services/rooms.service.js";
-import { DAY, MINUTE } from "../config/policy.js";
+import { CODE_RESEND_SECONDS, DAY, MAX_CODE_ATTEMPTS, MINUTE } from "../config/policy.js";
 
 const VERIFICATION_TTL = DAY;
 const RESET_TTL = 10 * MINUTE;
+
+const CODE_FIELDS = {
+  verification: { token: "emailVerificationToken", expires: "emailVerificationExpires", attempts: "emailVerificationAttempts", ttl: VERIFICATION_TTL },
+  reset: { token: "passwordResetToken", expires: "passwordResetExpires", attempts: "passwordResetAttempts", ttl: RESET_TTL },
+};
+
+const sameCode = (a, b) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
+/**
+ * Check an emailed code. Each check uses up one of MAX_CODE_ATTEMPTS *before* comparing, so guesses
+ * sent all at once from many addresses still get only that many tries at a 6-digit code; after that
+ * the person asks for a new one. Returns the user's id when the code matches.
+ */
+const checkCode = async (kind, email, token) => {
+  const f = CODE_FIELDS[kind];
+  const { count } = await prisma.user.updateMany({
+    where: { email, [f.token]: { not: null }, [f.expires]: { gt: new Date() }, [f.attempts]: { lt: MAX_CODE_ATTEMPTS } },
+    data: { [f.attempts]: { increment: 1 } },
+  });
+  if (count === 0) return null;
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, [f.token]: true } });
+  return user?.[f.token] && sameCode(user[f.token], token) ? user.id : null;
+};
+
+/** A fresh code for `user`, or null when one went out in the last CODE_RESEND_SECONDS (no email bombing) */
+const issueCode = async (user, kind) => {
+  const f = CODE_FIELDS[kind];
+  const sentAt = user[f.expires] ? user[f.expires].getTime() - f.ttl : 0;
+  if (Date.now() - sentAt < CODE_RESEND_SECONDS * 1000) return null;
+  const code = generateOtp();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { [f.token]: code, [f.expires]: new Date(Date.now() + f.ttl), [f.attempts]: 0 },
+  });
+  return code;
+};
 
 const issueTokens = async (userId) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -40,30 +77,45 @@ const unreadMessageWhere = (userId) => ({ receiverId: userId, status: { in: ["se
 
 export const registerUser = async (req, res) => {
   const { fullname, email, username, roll_no, password, phone_number } = req.body;
+  const rollNo = normalizeRollNo(roll_no);
 
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ username }, { email }, { phone_number }] },
-    select: { username: true, email: true, phone_number: true },
+  // A sign-up that hasn't been confirmed holds nothing: a newer sign-up with the same email, username,
+  // phone number or roll number replaces it, so nobody can block a classmate by signing up as them.
+  const clashes = await prisma.user.findMany({
+    where: { OR: [{ username }, { email }, { phone_number }, { roll_no: rollNo }] },
+    select: { id: true, isVerified: true, username: true, email: true, phone_number: true },
   });
-  if (existing) {
-    const field = existing.email === email ? "email" : existing.username === username ? "username" : "phone number";
-    throw new ApiError(409, `An account with that ${field} already exists.`, [{ path: field === "phone number" ? "phone_number" : field, message: `That ${field} is already registered.` }]);
+  const taken = clashes.find((u) => u.isVerified);
+  if (taken) {
+    const [path, label] =
+      taken.email === email
+        ? ["email", "email"]
+        : taken.username === username
+          ? ["username", "username"]
+          : taken.phone_number === phone_number
+            ? ["phone_number", "phone number"]
+            : ["roll_no", "roll number"];
+    throw new ApiError(409, `An account with that ${label} already exists.`, [{ path, message: `That ${label} is already registered.` }]);
   }
 
   const code = generateOtp();
-  const user = await prisma.user.create({
-    data: {
-      fullname,
-      email,
-      username,
-      roll_no: normalizeRollNo(roll_no),
-      phone_number,
-      password: await hashPassword(password),
-      emailVerificationToken: code,
-      emailVerificationExpires: new Date(Date.now() + VERIFICATION_TTL),
-      isVerified: false,
-    },
-    select: USER_PUBLIC_FIELDS,
+  const hashedPassword = await hashPassword(password);
+  const user = await prisma.$transaction(async (tx) => {
+    await tx.user.deleteMany({ where: { id: { in: clashes.map((u) => u.id) }, isVerified: false } });
+    return tx.user.create({
+      data: {
+        fullname,
+        email,
+        username,
+        roll_no: rollNo,
+        phone_number,
+        password: hashedPassword,
+        emailVerificationToken: code,
+        emailVerificationExpires: new Date(Date.now() + VERIFICATION_TTL),
+        isVerified: false,
+      },
+      select: USER_PUBLIC_FIELDS,
+    });
   });
 
   let delivered;
@@ -90,17 +142,14 @@ export const registerUser = async (req, res) => {
 
 export const verifyEmail = async (req, res) => {
   const { email, token } = req.body;
-  const user = await prisma.user.findFirst({
-    where: { email, emailVerificationToken: token, emailVerificationExpires: { gt: new Date() } },
-    select: { id: true },
-  });
-  if (!user) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
+  const userId = await checkCode("verification", email, token);
+  if (!userId) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
 
   await prisma.user.update({
-    where: { id: user.id },
-    data: { isVerified: true, emailVerificationToken: null, emailVerificationExpires: null },
+    where: { id: userId },
+    data: { isVerified: true, emailVerificationToken: null, emailVerificationExpires: null, emailVerificationAttempts: 0 },
   });
-  return res.status(200).json(new ApiResponse(200, await publicUser(user.id), "Email confirmed. You can sign in now."));
+  return res.status(200).json(new ApiResponse(200, await publicUser(userId), "Email confirmed. You can sign in now."));
 };
 
 export const resendVerificationEmail = async (req, res) => {
@@ -110,12 +159,8 @@ export const resendVerificationEmail = async (req, res) => {
   const generic = new ApiResponse(200, {}, "If that account exists and isn't confirmed yet, a new code is on its way.");
   if (!user || user.isVerified) return res.status(200).json(generic);
 
-  const code = generateOtp();
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { emailVerificationToken: code, emailVerificationExpires: new Date(Date.now() + VERIFICATION_TTL) },
-  });
-  await deliverCode({ purpose: "verification", to: user.email, name: user.fullname, code, expiresIn: "24 hours" });
+  const code = await issueCode(user, "verification");
+  if (code) await deliverCode({ purpose: "verification", to: user.email, name: user.fullname, code, expiresIn: "24 hours" });
   return res.status(200).json(generic);
 };
 
@@ -194,38 +239,30 @@ export const forgotPassword = async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return res.status(200).json(generic);
 
-  const code = generateOtp();
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordResetToken: code, passwordResetExpires: new Date(Date.now() + RESET_TTL) },
-  });
-  await deliverCode({ purpose: "password reset", to: user.email, name: user.fullname, code, expiresIn: "10 minutes" });
+  const code = await issueCode(user, "reset");
+  if (code) await deliverCode({ purpose: "password reset", to: user.email, name: user.fullname, code, expiresIn: "10 minutes" });
   return res.status(200).json(generic);
 };
 
-const findResetUser = (email, token) =>
-  prisma.user.findFirst({
-    where: { email, passwordResetToken: token, passwordResetExpires: { gt: new Date() } },
-    select: { id: true },
-  });
-
+// Checking the code here uses up an attempt too, so the check-then-reset flow takes two of them
 export const verifyResetToken = async (req, res) => {
-  const user = await findResetUser(req.body.email, req.body.token);
-  if (!user) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
+  const userId = await checkCode("reset", req.body.email, req.body.token);
+  if (!userId) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
   return res.status(200).json(new ApiResponse(200, { verified: true }, "Code accepted"));
 };
 
 export const resetPassword = async (req, res) => {
   const { email, token, newPassword } = req.body;
-  const user = await findResetUser(email, token);
-  if (!user) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
+  const userId = await checkCode("reset", email, token);
+  if (!userId) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
 
   await prisma.user.update({
-    where: { id: user.id },
+    where: { id: userId },
     data: {
       password: await hashPassword(newPassword),
       passwordResetToken: null,
       passwordResetExpires: null,
+      passwordResetAttempts: 0,
       // Signs out every other session
       refreshToken: null,
     },
@@ -282,7 +319,6 @@ export const updateAccountDetails = async (req, res) => {
     });
     if (taken) throw new ApiError(409, "That phone number is already registered.", [{ path: "phone_number", message: "Already registered to another account." }]);
   }
-  if (fields.roll_no) fields.roll_no = normalizeRollNo(fields.roll_no);
 
   if (games) {
     const known = await prisma.game.count({ where: { id: { in: games.map((g) => g.game) } } });

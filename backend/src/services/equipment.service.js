@@ -9,9 +9,10 @@ import { DAY, HISTORY_RETENTION_DAYS, LATE_GRACE_MINUTES, MINUTE, RESERVATION_MI
 
 const historyExpiry = (now) => new Date(now.getTime() + HISTORY_RETENTION_DAYS * DAY);
 
+// Roll numbers are unique and stored upper-case; rollNo arrives upper-cased from validation
 const findUserByRoll = (db, rollNo) =>
-  db.user.findFirst({
-    where: { roll_no: { equals: rollNo, mode: "insensitive" } },
+  db.user.findUnique({
+    where: { roll_no: rollNo },
     select: { id: true, fullname: true, roll_no: true, phone_number: true },
   });
 
@@ -289,8 +290,8 @@ export const cancelReservation = async ({ equipmentId, userId }) => {
 /** Everything the desk needs about a roll number before lending */
 export const getStudentSummary = async (rollNo, now = new Date()) => {
   const [user, standing, activeLoans, recentLoans] = await Promise.all([
-    prisma.user.findFirst({
-      where: { roll_no: { equals: rollNo, mode: "insensitive" } },
+    prisma.user.findUnique({
+      where: { roll_no: rollNo },
       select: { id: true, fullname: true, email: true, phone_number: true, roll_no: true },
     }),
     getStanding(rollNo, now),

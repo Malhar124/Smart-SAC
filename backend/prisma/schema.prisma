@@ -75,21 +75,25 @@ model Admin {
 }
 
 model User {
-  id                       String    @id @default(cuid())
-  username                 String    @unique
-  achievements             String[]
-  emailVerificationToken   String?
-  emailVerificationExpires DateTime?
-  isVerified               Boolean   @default(false)
-  description              String?
-  email                    String    @unique
-  phone_number             String    @unique
-  fullname                 String
-  roll_no                  String
-  password                 String
-  refreshToken             String?
-  passwordResetToken       String?
-  passwordResetExpires     DateTime?
+  id                        String    @id @default(cuid())
+  username                  String    @unique
+  achievements              String[]
+  emailVerificationToken    String?
+  emailVerificationExpires  DateTime?
+  // Wrong guesses at the current code; the code is cancelled at MAX_CODE_ATTEMPTS
+  emailVerificationAttempts Int       @default(0)
+  isVerified                Boolean   @default(false)
+  description               String?
+  email                     String    @unique
+  phone_number              String    @unique
+  fullname                  String
+  // Upper-case, set at sign-up and not editable: loans and borrowing blocks are kept by roll number
+  roll_no                   String    @unique
+  password                  String
+  refreshToken              String?
+  passwordResetToken        String?
+  passwordResetExpires      DateTime?
+  passwordResetAttempts     Int       @default(0)
 
   // Relations
   games              UserGameRating[]

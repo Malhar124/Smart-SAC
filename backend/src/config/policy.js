@@ -29,6 +29,10 @@ export const ROOM_REMINDER_MINUTES = 15;
 /** History rows are kept this long */
 export const HISTORY_RETENTION_DAYS = 90;
 
+/** Email codes (verification, password reset): wrong guesses allowed per code, and the wait between codes */
+export const MAX_CODE_ATTEMPTS = 5;
+export const CODE_RESEND_SECONDS = 60;
+
 export const MINUTE = 60 * 1000;
 export const HOUR = 60 * MINUTE;
 export const DAY = 24 * HOUR;
