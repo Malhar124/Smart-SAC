@@ -252,25 +252,29 @@ export const reserveEquipment = async ({ equipmentId, user }) => {
   const standing = await getStanding(normalizeRollNo(user.roll_no), now);
   if (standing.blocked) throw blockedError(standing);
 
-  const existing = await prisma.equipment.findFirst({
-    where: { reservedById: user.id, reservedUntil: { gt: now }, status: "available" },
-    select: { name: true },
-  });
-  if (existing) {
-    throw new ApiError(409, `You're already holding the ${existing.name}. Collect it or cancel that first.`);
-  }
-
   const reservedUntil = new Date(now.getTime() + RESERVATION_MINUTES * MINUTE);
-  // Conditional update so two students tapping at once can't both get the item
-  const { count } = await prisma.equipment.updateMany({
-    where: { id: equipmentId, status: "available", OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }] },
-    data: { reservedById: user.id, reservedUntil, reservationRemindedAt: null },
+  await prisma.$transaction(async (tx) => {
+    // Serialise this student's reservations, so requests sent at once can't each pass the one-hold check
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
+    const existing = await tx.equipment.findFirst({
+      where: { reservedById: user.id, reservedUntil: { gt: now }, status: "available" },
+      select: { name: true },
+    });
+    if (existing) {
+      throw new ApiError(409, `You're already holding the ${existing.name}. Collect it or cancel that first.`);
+    }
+
+    // Conditional update so two students tapping at once can't both get the item
+    const { count } = await tx.equipment.updateMany({
+      where: { id: equipmentId, status: "available", OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }] },
+      data: { reservedById: user.id, reservedUntil, reservationRemindedAt: null },
+    });
+    if (count === 0) {
+      const item = await tx.equipment.findUnique({ where: { id: equipmentId }, select: { id: true } });
+      if (!item) throw new ApiError(404, "That item doesn't exist.");
+      throw new ApiError(409, "Someone else just borrowed or reserved this item.");
+    }
   });
-  if (count === 0) {
-    const item = await prisma.equipment.findUnique({ where: { id: equipmentId }, select: { id: true } });
-    if (!item) throw new ApiError(404, "That item doesn't exist.");
-    throw new ApiError(409, "Someone else just borrowed or reserved this item.");
-  }
 
   publish("equipment.changed", { equipmentId }, { everyone: true });
   return { equipmentId, reservedUntil };

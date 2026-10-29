@@ -46,6 +46,16 @@ describe("reservations", () => {
     expect(second.body.message).toMatch(/already holding/);
   });
 
+  it("allows one hold even when a student reserves several items at the same time", async () => {
+    const student = await createStudent();
+    const items = [];
+    for (let i = 1; i <= 5; i += 1) items.push(await createItem(`chess set ${i}`, "chess"));
+    const agent = await signInStudent(student);
+    const results = await Promise.all(items.map((item) => agent.post("/api/v1/users/reserve-equipment").send({ equipmentId: item.id })));
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(await prisma.equipment.count({ where: { reservedById: student.id } })).toBe(1);
+  });
+
   it("gives the item to exactly one of two students who tap at the same time", async () => {
     const item = await createItem();
     const agents = await Promise.all([createStudent(), createStudent()].map(async (p) => signInStudent(await p)));
