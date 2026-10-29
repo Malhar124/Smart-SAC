@@ -28,15 +28,15 @@ describe("roll numbers", () => {
     expect(res.body.errors).toEqual([expect.objectContaining({ path: "roll_no", message: expect.stringContaining("IIT2023001") })]);
   });
 
-  it("can be anything unclaimed for an email that isn't a roll number", async () => {
-    const res = await register({ email: "riya.sharma@iiita.ac.in", roll_no: "pse2023001" });
-    expect(res.status).toBe(201);
-    expect(res.body.data.user.roll_no).toBe("PSE2023001");
+  it("come only from a roll-number email, so nobody can sign up as another student", async () => {
+    const res = await register({ email: "riya.sharma@iiita.ac.in", roll_no: "IIT2023001" });
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toEqual([expect.objectContaining({ path: "email" })]);
   });
 
   it("belongs to one account", async () => {
     await createStudent({ roll_no: "IIT2023001", email: "someone@iiita.ac.in" });
-    const res = await register({ email: "riya.sharma@iiita.ac.in" });
+    const res = await register();
     expect(res.status).toBe(409);
     expect(res.body.errors[0].path).toBe("roll_no");
   });
@@ -66,10 +66,10 @@ describe("unconfirmed sign-ups", () => {
 
   it("don't hold a phone number, username or roll number either", async () => {
     // Someone signs up with Riya's phone and username under another address and never confirms
-    await register({ email: "squatter@iiita.ac.in", roll_no: "IIT2023999" });
+    expect((await register({ email: "iit2023999@iiita.ac.in", roll_no: "IIT2023999" })).status).toBe(201);
     const res = await register();
     expect(res.status).toBe(201);
-    expect(await prisma.user.findUnique({ where: { email: "squatter@iiita.ac.in" } })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { email: "iit2023999@iiita.ac.in" } })).toBeNull();
   });
 
   it("still lose to a confirmed account", async () => {

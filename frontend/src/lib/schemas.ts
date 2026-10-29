@@ -63,7 +63,9 @@ export const registerSchema = z
   .refine((v) => v.password === v.confirmPassword, { path: ["confirmPassword"], message: "The passwords don't match" })
   .superRefine((v, ctx) => {
     const fromEmail = rollNoFromEmail(v.email);
-    if (fromEmail && v.roll_no !== fromEmail) {
+    if (!fromEmail) {
+      ctx.addIssue({ code: "custom", path: ["email"], message: "Use your student email, your roll number @iiita.ac.in" });
+    } else if (v.roll_no !== fromEmail) {
       ctx.addIssue({ code: "custom", path: ["roll_no"], message: `Your email says your roll number is ${fromEmail}` });
     }
   });

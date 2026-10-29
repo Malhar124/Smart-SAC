@@ -9,7 +9,7 @@ Developed as a DBMS group project.
 ## Features
 
 ### Students
-- **Sign up with an institute email.** Only `@iiita.ac.in` addresses; the email is confirmed with a 6-digit code before the first sign-in. The roll number comes from a student email (`iit2023001@…` is `IIT2023001`) and can't be changed afterwards, because loans and borrowing blocks are kept by it.
+- **Sign up with an institute email.** Only student addresses (`<roll number>@iiita.ac.in`); the email is confirmed with a 6-digit code before the first sign-in. The roll number comes from a student email (`iit2023001@…` is `IIT2023001`) and can't be changed afterwards, because loans and borrowing blocks are kept by it.
 - **Equipment rack.** Every item with its state: free, held, out (with who has it and when it's due back) or broken. Updates live.
 - **Reservations.** Hold a free item for 15 minutes, one at a time, then collect it at the desk. Reminders before a hold ends.
 - **Due times and reminders.** Each loan has a due time; students get a reminder 15 minutes before and a notice if it goes overdue.

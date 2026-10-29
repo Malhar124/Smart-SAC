@@ -30,6 +30,19 @@ describe("form rules", () => {
     expect(result.errors).toMatchObject({ email: "Use your @iiita.ac.in email address", confirmPassword: "The passwords don't match" });
   });
 
+  it("accepts only a roll-number email on sign-up", () => {
+    const result = validate(registerSchema, {
+      fullname: "Riya",
+      username: "riya",
+      email: "riya.sharma@iiita.ac.in",
+      phone_number: "9876543210",
+      roll_no: "IIT2023001",
+      password: "Strong@123",
+      confirmPassword: "Strong@123",
+    });
+    expect(result.errors).toMatchObject({ email: "Use your student email, your roll number @iiita.ac.in" });
+  });
+
   it("checks the lend form", () => {
     expect(validate(lendSchema, { rollNo: "", equipmentId: "", durationMinutes: 5 }).errors).toMatchObject({
       rollNo: "Enter a roll number",

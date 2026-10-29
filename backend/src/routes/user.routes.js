@@ -27,9 +27,12 @@ const RegisterBody = z
     password: v.password,
   })
   .superRefine((b, ctx) => {
-    // The roll number can't be changed later, so a student email has to match it now
+    // The roll number can't be changed later and loans follow it, so it must come from the student's own email
+    if (typeof b.email !== "string") return;
     const fromEmail = v.rollNoFromEmail(b.email);
-    if (fromEmail && typeof b.roll_no === "string" && b.roll_no !== fromEmail) {
+    if (!fromEmail) {
+      ctx.addIssue({ code: "custom", path: ["email"], message: "Use your student email, your roll number @iiita.ac.in" });
+    } else if (typeof b.roll_no === "string" && b.roll_no !== fromEmail) {
       ctx.addIssue({ code: "custom", path: ["roll_no"], message: `Your email says your roll number is ${fromEmail}` });
     }
   });
