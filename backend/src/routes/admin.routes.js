@@ -134,7 +134,7 @@ del("/delete-announcement/:id", { summary: "Remove an announcement", auth: "admi
 
 get("/get-rooms", { summary: "Rooms and bookings (with who booked) for a day", auth: "admin", query: RoomsQuery, tags: ["Rooms"] }, features.getRoomsForStaff);
 post("/add-room", { summary: "Add a bookable room", auth: "admin", body: RoomBody, tags: ["Rooms"] }, features.addRoom);
-post("/update-room/:roomId", { summary: "Rename, resize, describe, open or close a room", auth: "admin", params: v.idParam("roomId"), body: UpdateRoomBody, tags: ["Rooms"] }, features.updateRoom);
+post("/update-room/:roomId", { summary: "Rename, resize, describe, open or close a room; closing cancels upcoming bookings and notifies students",auth: "admin", params: v.idParam("roomId"), body: UpdateRoomBody, tags: ["Rooms"] }, features.updateRoom);
 post("/remove-room/:roomId", { summary: "Remove a room; upcoming bookings are cancelled and students notified", auth: "admin", params: v.idParam("roomId"), tags: ["Rooms"] }, features.removeRoom);
 post("/cancel-room-booking/:bookingId", { summary: "Cancel a student's booking and notify them", auth: "admin", params: v.idParam("bookingId"), body: CancelBookingBody, tags: ["Rooms"] }, features.cancelRoomBookingAsStaff);
 

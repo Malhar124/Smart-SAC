@@ -164,10 +164,37 @@ export const createRoom = async ({ name, capacity, description }) => {
   return room;
 };
 
-export const updateRoom = async (roomId, changes) => {
-  const exists = await prisma.room.findUnique({ where: { id: roomId }, select: { id: true } });
-  if (!exists) throw new ApiError(404, "That room doesn't exist.");
+const tellBookersCancelled = (roomName, bookings, why) =>
+  Promise.all(
+    bookings.map((b) =>
+      notify(b.userId, {
+        type: "room_booking_cancelled",
+        title: `Your ${roomName} booking was cancelled`,
+        body: `${formatDayClock(b.startsAt)}. ${why}`,
+        link: "/student/rooms",
+      })
+    )
+  );
+
+/** Closing a room (status maintenance) cancels its upcoming bookings and tells the students */
+export const updateRoom = async (roomId, changes, adminId) => {
+  const before = await prisma.room.findUnique({ where: { id: roomId }, select: { status: true } });
+  if (!before) throw new ApiError(404, "That room doesn't exist.");
+  // Saved first: bookRoom checks the status under a lock on this row, so no booking can slip in after the cancel
   const room = await prisma.room.update({ where: { id: roomId }, data: changes });
+
+  if (changes.status === "maintenance" && before.status !== "maintenance") {
+    const now = new Date();
+    const upcoming = await prisma.roomBooking.findMany({
+      where: { roomId, cancelledAt: null, endsAt: { gt: now } },
+      select: { id: true, userId: true, startsAt: true },
+    });
+    await prisma.roomBooking.updateMany({
+      where: { id: { in: upcoming.map((b) => b.id) } },
+      data: { cancelledAt: now, cancelledByAdminId: adminId },
+    });
+    await tellBookersCancelled(room.name, upcoming, "The room is closed for now. Book another from the Rooms page.");
+  }
   publish("room.changed", { roomId }, { everyone: true });
   return room;
 };
@@ -180,15 +207,6 @@ export const removeRoom = async (roomId) => {
   if (!room) throw new ApiError(404, "That room doesn't exist.");
 
   await prisma.room.delete({ where: { id: roomId } });
-  await Promise.all(
-    room.bookings.map((b) =>
-      notify(b.userId, {
-        type: "room_booking_cancelled",
-        title: `Your ${room.name} booking was cancelled`,
-        body: `${formatDayClock(b.startsAt)}. The room is no longer available to book.`,
-        link: "/student/rooms",
-      })
-    )
-  );
+  await tellBookersCancelled(room.name, room.bookings, "The room is no longer available to book.");
   publish("room.changed", { roomId }, { everyone: true });
 };

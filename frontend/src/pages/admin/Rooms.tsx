@@ -94,7 +94,10 @@ const AdminRooms = () => {
 
   const toggle = useMutation({
     mutationFn: (room: Room) => api.post(`/admin/update-room/${room.id}`, { status: room.status === "maintenance" ? "available" : "maintenance" }),
-    onSuccess: (_d, room) => toast.success(room.status === "maintenance" ? `${room.name} reopened` : `${room.name} closed for booking`),
+    onSuccess: (_d, room) =>
+      room.status === "maintenance"
+        ? toast.success(`${room.name} reopened`)
+        : toast.success(`${room.name} closed`, { description: "Upcoming bookings were cancelled and the students notified." }),
     onSettled: refresh,
   });
   const remove = useMutation({
@@ -119,7 +122,7 @@ const AdminRooms = () => {
       <Navbar role="admin" />
       <PageHeader
         title="Rooms"
-        description="Who has which room, and when. Close a room to stop new bookings."
+        description="Who has which room, and when. Closing a room stops new bookings and cancels upcoming ones."
         actions={
           <Button variant="line" onClick={() => setEditing("new")}>
             Add a room
@@ -171,9 +174,29 @@ const AdminRooms = () => {
                     <Button size="sm" variant="ghost" onClick={() => setEditing(room)}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => toggle.mutate(room)} disabled={toggle.isPending && toggle.variables?.id === room.id}>
-                      {room.status === "maintenance" ? "Reopen" : "Close"}
-                    </Button>
+                    {room.status === "maintenance" ? (
+                      <Button size="sm" variant="ghost" onClick={() => toggle.mutate(room)} disabled={toggle.isPending && toggle.variables?.id === room.id}>
+                        Reopen
+                      </Button>
+                    ) : (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="ghost" disabled={toggle.isPending && toggle.variables?.id === room.id}>
+                            Close
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Close the {room.name}?</AlertDialogTitle>
+                            <AlertDialogDescription>Nobody can book it until you reopen it. Upcoming bookings are cancelled and those students are notified.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Keep it open</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => toggle.mutate(room)}>Close room</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive">

@@ -139,6 +139,20 @@ describe("rooms (staff)", () => {
     expect(await prisma.room.count()).toBe(0);
     expect((await prisma.notification.findFirst({ where: { userId: student.id } })).type).toBe("room_booking_cancelled");
   });
+
+  it("closing a room cancels its upcoming bookings with a notice", async () => {
+    const staff = await createStaff();
+    const desk = await signInStaff(staff);
+    const student = await createStudent();
+    const room = await prisma.room.create({ data: { name: "Music Room", capacity: 12 } });
+    await (await signInStudent(student)).post("/api/v1/users/book-room").send({ roomId: room.id, startsAt: tomorrowAt(14), hours: 1 });
+
+    expect((await desk.post(`/api/v1/admin/update-room/${room.id}`).send({ status: "maintenance" })).status).toBe(200);
+    const booking = await prisma.roomBooking.findFirst({ where: { roomId: room.id } });
+    expect(booking.cancelledAt).not.toBeNull();
+    expect(booking.cancelledByAdminId).toBe(staff.id);
+    expect((await prisma.notification.findFirst({ where: { userId: student.id } })).type).toBe("room_booking_cancelled");
+  });
 });
 
 describe("announcements", () => {

@@ -111,7 +111,7 @@ export const getRoomsForStaff = async (req, res) =>
 
 export const addRoom = async (req, res) => ok(res, await rooms.createRoom(req.body), "Room added", 201);
 
-export const updateRoom = async (req, res) => ok(res, await rooms.updateRoom(req.params.roomId, req.body), "Room saved");
+export const updateRoom = async (req, res) => ok(res, await rooms.updateRoom(req.params.roomId, req.body, req.user.id), "Room saved");
 
 export const removeRoom = async (req, res) => {
   await rooms.removeRoom(req.params.roomId);
