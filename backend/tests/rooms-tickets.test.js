@@ -101,7 +101,7 @@ describe("tickets", () => {
     expect(created.status).toBe(201);
     const ticketId = created.body.data.id;
 
-    expect((await desk.post("/api/v1/admin/update-ticket").send({ ticketId, newStatus: "in-process", note: "Regripping today" })).status).toBe(200);
+    expect((await desk.post("/api/v1/admin/update-ticket").send({ ticketId, newStatus: "in_process", note: "Regripping today" })).status).toBe(200);
     expect((await desk.post(`/api/v1/admin/add-ticket-comment/${ticketId}`).send({ body: "Done, it's back on the rack." })).status).toBe(201);
     expect((await agent.post(`/api/v1/users/add-ticket-comment/${ticketId}`).send({ body: "Thanks!" })).status).toBe(201);
 

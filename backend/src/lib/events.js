@@ -52,8 +52,6 @@ export const publish = (type, data = {}, audience = { everyone: true }) => {
   logger.debug({ type, sent }, "live event published");
 };
 
-export const connectedClientCount = () => clients.size;
-
 /** Close every stream (used on shutdown so the server can exit) */
 export const closeAllStreams = () => {
   for (const client of clients.values()) client.res.end();

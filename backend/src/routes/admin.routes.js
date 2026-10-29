@@ -40,13 +40,9 @@ const GameNameBody = z.object({ name: v.shortText("Game name", 40).transform((s)
 const GameIdBody = z.object({ gameId: v.id });
 const AddEquipmentBody = z.object({ gameId: v.id, name: v.shortText("Item name", 60).transform((s) => s.toLowerCase()) });
 
-// The old frontend sent "in-process"; accept both spellings
-const TicketStatus = z.preprocess(
-  (value) => (value === "in-process" ? "in_process" : value),
-  z.enum(["open", "in_process", "closed"], { message: "Status must be open, in_process or closed" })
-);
+const TicketStatus = z.enum(["open", "in_process", "closed"], { message: "Status must be open, in_process or closed" });
 const TicketsQuery = z.object({
-  status: z.preprocess((value) => (value === "in-process" ? "in_process" : value), z.enum(["all", "open", "in_process", "closed"]).default("all")),
+  status: z.enum(["all", "open", "in_process", "closed"]).default("all"),
   page: v.page,
   q: z.string().trim().max(80).optional(),
 });
