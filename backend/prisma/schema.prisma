@@ -59,7 +59,11 @@ model Admin {
   email    String  @unique
   // Shown on history, loans and ticket replies so students and staff can see who acted
   name     String?
+  // Null until the staff member proves they read this inbox with an emailed code
   password String?
+  emailVerificationToken    String?
+  emailVerificationExpires  DateTime?
+  emailVerificationAttempts Int       @default(0)
 
   // Relations
   sessions              Session[]

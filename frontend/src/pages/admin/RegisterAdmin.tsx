@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { serverFieldErrors, staffRegisterSchema, validate, type FieldErrors } from "@/lib/schemas";
+import { otp, serverFieldErrors, staffRegisterSchema, validate, type FieldErrors } from "@/lib/schemas";
 import AuthLayout from "@/components/AuthLayout";
 import { Field, fieldProps } from "@/components/Field";
 import { Button } from "@/components/ui/button";
@@ -10,18 +10,27 @@ import { Input } from "@/components/ui/input";
 
 const RegisterAdmin = () => {
   const navigate = useNavigate();
-  const [values, setValues] = useState({ name: "", email: "", password: "" });
+  const [values, setValues] = useState({ name: "", email: "", password: "", token: "" });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pending, setPending] = useState(false);
+  // The account is created only with the code emailed to the staff address
+  const [codeSent, setCodeSent] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const result = validate(staffRegisterSchema, values);
+    const schema = codeSent ? staffRegisterSchema.extend({ token: otp }) : staffRegisterSchema;
+    const result = validate(schema, values);
     setErrors(result.errors ?? {});
     if (!result.data) return;
     setPending(true);
     try {
-      await api.post("/admin/register", result.data);
+      if (!codeSent) {
+        await api.post("/admin/register", { email: result.data.email });
+        setCodeSent(true);
+        toast.success("Code sent", { description: `Check ${result.data.email} for a 6-digit code.` });
+        return;
+      }
+      await api.post("/admin/confirm-registration", result.data);
       toast.success("Staff account created", { description: "Sign in to open the desk." });
       navigate("/admin/login");
     } catch (error) {
@@ -43,7 +52,14 @@ const RegisterAdmin = () => {
           <Input {...fieldProps("name", errors.name)} autoComplete="name" value={values.name} onChange={(e) => setValues({ ...values, name: e.target.value })} disabled={pending} autoFocus />
         </Field>
         <Field id="email" label="Email" error={errors.email}>
-          <Input {...fieldProps("email", errors.email)} type="email" autoComplete="email" value={values.email} onChange={(e) => setValues({ ...values, email: e.target.value })} disabled={pending} />
+          <Input
+            {...fieldProps("email", errors.email)}
+            type="email"
+            autoComplete="email"
+            value={values.email}
+            onChange={(e) => setValues({ ...values, email: e.target.value })}
+            disabled={pending || codeSent}
+          />
         </Field>
         <Field id="password" label="Password" error={errors.password} hint="8+ characters with upper and lower case, a number and one of @ $ ! % * ? &">
           <Input
@@ -55,8 +71,24 @@ const RegisterAdmin = () => {
             disabled={pending}
           />
         </Field>
+        {codeSent && (
+          <Field id="token" label="Code from the email" error={errors.token}>
+            <Input
+              {...fieldProps("token", errors.token)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={values.token}
+              onChange={(e) => setValues({ ...values, token: e.target.value.replace(/\D/g, "") })}
+              placeholder="123456"
+              className="tabular tracking-[0.3em] text-lg"
+              disabled={pending}
+              autoFocus
+            />
+          </Field>
+        )}
         <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Creating account…" : "Create staff account"}
+          {codeSent ? (pending ? "Creating account…" : "Create staff account") : pending ? "Sending code…" : "Email me a code"}
         </Button>
         <p className="text-center text-sm">
           Already have one?{" "}

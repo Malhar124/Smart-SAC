@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "crypto";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { prisma } from "../db/index.js";
@@ -11,46 +10,7 @@ import { getStanding } from "../services/standing.service.js";
 import { listEquipmentForStudent } from "../services/equipment.service.js";
 import { countOpenTicketsForUser } from "../services/tickets.service.js";
 import { listUpcomingBookingsForUser } from "../services/rooms.service.js";
-import { CODE_RESEND_SECONDS, DAY, MAX_CODE_ATTEMPTS, MINUTE } from "../config/policy.js";
-
-const VERIFICATION_TTL = DAY;
-const RESET_TTL = 10 * MINUTE;
-
-const CODE_FIELDS = {
-  verification: { token: "emailVerificationToken", expires: "emailVerificationExpires", attempts: "emailVerificationAttempts", ttl: VERIFICATION_TTL },
-  reset: { token: "passwordResetToken", expires: "passwordResetExpires", attempts: "passwordResetAttempts", ttl: RESET_TTL },
-};
-
-const sameCode = (a, b) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-
-/**
- * Check an emailed code. Each check uses up one of MAX_CODE_ATTEMPTS *before* comparing, so guesses
- * sent all at once from many addresses still get only that many tries at a 6-digit code; after that
- * the person asks for a new one. Returns the user's id when the code matches.
- */
-const checkCode = async (kind, email, token) => {
-  const f = CODE_FIELDS[kind];
-  const { count } = await prisma.user.updateMany({
-    where: { email, [f.token]: { not: null }, [f.expires]: { gt: new Date() }, [f.attempts]: { lt: MAX_CODE_ATTEMPTS } },
-    data: { [f.attempts]: { increment: 1 } },
-  });
-  if (count === 0) return null;
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, [f.token]: true } });
-  return user?.[f.token] && sameCode(user[f.token], token) ? user.id : null;
-};
-
-/** A fresh code for `user`, or null when one went out in the last CODE_RESEND_SECONDS (no email bombing) */
-const issueCode = async (user, kind) => {
-  const f = CODE_FIELDS[kind];
-  const sentAt = user[f.expires] ? user[f.expires].getTime() - f.ttl : 0;
-  if (Date.now() - sentAt < CODE_RESEND_SECONDS * 1000) return null;
-  const code = generateOtp();
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { [f.token]: code, [f.expires]: new Date(Date.now() + f.ttl), [f.attempts]: 0 },
-  });
-  return code;
-};
+import { checkCode, CODE_FIELDS, issueCode } from "../services/codes.service.js";
 
 const publicUser = (id) => prisma.user.findUnique({ where: { id }, select: USER_PUBLIC_FIELDS });
 
@@ -95,7 +55,7 @@ export const registerUser = async (req, res) => {
         phone_number,
         password: hashedPassword,
         emailVerificationToken: code,
-        emailVerificationExpires: new Date(Date.now() + VERIFICATION_TTL),
+        emailVerificationExpires: new Date(Date.now() + CODE_FIELDS.verification.ttl),
         isVerified: false,
       },
       select: USER_PUBLIC_FIELDS,

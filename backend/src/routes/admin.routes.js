@@ -13,7 +13,8 @@ const { get, post, delete: del } = routes;
 
 const StaffName = v.shortText("Name", 60);
 
-const RegisterBody = z.object({ name: StaffName, email: v.email, password: v.password });
+const RegisterBody = z.object({ email: v.email });
+const ConfirmRegistrationBody = z.object({ name: StaffName, email: v.email, password: v.password, token: v.otp });
 const LoginBody = z.object({ email: v.email, password: z.string().min(1, "Enter your password") });
 const UpdateAccountBody = z
   .object({ name: StaffName.optional(), email: v.email.optional() })
@@ -83,7 +84,8 @@ const CancelBookingBody = z.object({ reason: z.string().trim().max(200).optional
 
 // ---------------------------------------------------------------- account
 
-post("/register", { summary: "Create a staff account (email must be in ADMIN_EMAILS)", limiter: authLimiter, body: RegisterBody, tags: ["Auth"] }, admin.registerAdmin);
+post("/register", { summary: "Email a code to a staff address (must be in ADMIN_EMAILS) to start a staff account", limiter: authLimiter, body: RegisterBody, tags: ["Auth"] }, admin.registerAdmin);
+post("/confirm-registration", { summary: "Create the staff account with the emailed code, a name and a password", limiter: authLimiter, body: ConfirmRegistrationBody, tags: ["Auth"] }, admin.confirmAdminRegistration);
 post("/login", { summary: "Staff sign in; sets the session cookies", limiter: authLimiter, body: LoginBody, tags: ["Auth"] }, admin.loginAdmin);
 post("/logout", { summary: "Sign out and revoke the refresh token", auth: "admin", tags: ["Auth"] }, admin.logoutAdmin);
 post("/refresh-token", { summary: "Rotate the session cookies using the refresh-token cookie", tags: ["Auth"] }, admin.refreshAccessToken);

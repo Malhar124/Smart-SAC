@@ -87,7 +87,7 @@ npm run dev                   # http://localhost:5173
 Leave `EMAIL_USER` / `EMAIL_PASS` empty and verification and reset codes are printed in the backend log instead of emailed. For real email with Gmail, use an [App Password](https://support.google.com/accounts/answer/185833).
 
 ### Staff accounts
-Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`. Removing an email from the list signs that account out and stops it signing in again.
+Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`: a 6-digit code goes to that address, and the password is set only with it. Removing an email from the list signs that account out and stops it signing in again.
 
 ### Updating an existing database
 `npm run db:deploy` applies new migrations. After the October 2026 ones everyone signs in again once (sessions became per-device), and the migration stops if two accounts share a roll number: decide which account owns it and fix the other first.

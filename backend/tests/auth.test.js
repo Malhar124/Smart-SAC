@@ -132,16 +132,29 @@ describe("passwords", () => {
 
 describe("staff accounts", () => {
   it("only lets emails on the staff list register", async () => {
-    const outsider = await request(app)
-      .post("/api/v1/admin/register")
-      .send({ name: "Someone", email: "someone@iiita.ac.in", password: "Strong@123" });
+    const outsider = await request(app).post("/api/v1/admin/register").send({ email: "someone@iiita.ac.in" });
     expect(outsider.status).toBe(403);
+  });
 
-    const listed = await request(app)
-      .post("/api/v1/admin/register")
-      .send({ name: "Desk Staff", email: "desk@iiita.ac.in", password: "Strong@123" });
-    expect(listed.status).toBe(201);
-    expect(listed.body.data.name).toBe("Desk Staff");
+  it("sets the password only with the code emailed to the staff address", async () => {
+    const details = { name: "Desk Staff", email: "desk@iiita.ac.in", password: "Strong@123" };
+    expect((await request(app).post("/api/v1/admin/register").send({ email: details.email })).status).toBe(200);
+
+    // Someone who knows the listed email but can't read its inbox gets nowhere
+    const guess = await request(app).post("/api/v1/admin/confirm-registration").send({ ...details, token: "000000" });
+    expect(guess.status).toBe(400);
+    expect((await request(app).post("/api/v1/admin/login").send(details)).status).toBe(401);
+
+    const { emailVerificationToken: code } = await prisma.admin.findUnique({ where: { email: details.email } });
+    const confirmed = await request(app).post("/api/v1/admin/confirm-registration").send({ ...details, token: code });
+    expect(confirmed.status).toBe(201);
+    expect(confirmed.body.data.name).toBe("Desk Staff");
+    expect((await request(app).post("/api/v1/admin/login").send(details)).status).toBe(200);
+  });
+
+  it("won't send a code for a staff email that already has an account", async () => {
+    const staff = await createStaff();
+    expect((await request(app).post("/api/v1/admin/register").send({ email: staff.email })).status).toBe(409);
   });
 
   it("signs staff in", async () => {

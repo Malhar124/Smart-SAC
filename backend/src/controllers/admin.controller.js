@@ -5,6 +5,8 @@ import { publish } from "../lib/events.js";
 import { ADMIN_PUBLIC_FIELDS } from "../middlewares/auth.middleware.js";
 import { cookieOptions, hashPassword, isPasswordCorrect, isStaffEmail, ROLES } from "../utils/auth.js";
 import { endSession, rotateSession, startSession } from "../services/session.service.js";
+import { checkCode, issueCode } from "../services/codes.service.js";
+import { deliverCode } from "../utils/mail.js";
 import { listEquipmentForStaff, listOverdueLoans } from "../services/equipment.service.js";
 import { notifyAllStudents } from "../services/notifications.service.js";
 import { DAY } from "../config/policy.js";
@@ -13,20 +15,44 @@ const ok = (res, data, message, status = 200) => res.status(status).json(new Api
 
 // ---------------------------------------------------------------- account
 
+/** Step 1 of a staff sign-up: email a code, so only someone who reads that inbox can set the password */
 export const registerAdmin = async (req, res) => {
-  const { email, password, name } = req.body;
+  const { email } = req.body;
   if (!isStaffEmail(email)) {
     throw new ApiError(403, "This email isn't on the staff list. Ask the SAC office to add it to ADMIN_EMAILS.");
   }
 
-  const existing = await prisma.admin.findUnique({ where: { email } });
-  // Staff created before per-admin passwords existed have no password yet; let them set one
-  if (existing?.password) throw new ApiError(409, "A staff account with this email already exists.");
+  // A row without a password is an unclaimed staff email; it holds the code until it's confirmed
+  const admin = await prisma.admin.upsert({ where: { email }, update: {}, create: { email } });
+  if (admin.password) throw new ApiError(409, "A staff account with this email already exists.");
 
-  const admin = await prisma.admin.upsert({
-    where: { email },
-    update: { password: await hashPassword(password), name },
-    create: { email, name, password: await hashPassword(password) },
+  const code = await issueCode(admin, "verification", "admin");
+  if (code) {
+    try {
+      await deliverCode({ purpose: "verification", to: email, name: admin.name ?? undefined, code, expiresIn: "24 hours" });
+    } catch {
+      throw new ApiError(502, "We couldn't send the code. Try again in a few minutes.");
+    }
+  }
+  return ok(res, {}, "We emailed a 6-digit code to that address.");
+};
+
+/** Step 2: the emailed code sets the name and password */
+export const confirmAdminRegistration = async (req, res) => {
+  const { email, token, name, password } = req.body;
+  const adminId = await checkCode("verification", email, token, "admin");
+  if (!adminId) throw new ApiError(400, "That code is wrong or has expired. Ask for a new one.");
+  if (!isStaffEmail(email)) throw new ApiError(403, "This email isn't on the staff list any more.");
+
+  const admin = await prisma.admin.update({
+    where: { id: adminId },
+    data: {
+      name,
+      password: await hashPassword(password),
+      emailVerificationToken: null,
+      emailVerificationExpires: null,
+      emailVerificationAttempts: 0,
+    },
     select: ADMIN_PUBLIC_FIELDS,
   });
   return ok(res, admin, "Staff account created", 201);
