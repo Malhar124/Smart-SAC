@@ -147,7 +147,8 @@ export interface StudentSummary {
   student: { id: string; fullname: string; email: string; phone_number: string; roll_no: string } | null;
   standing: Standing;
   activeLoans: Loan[];
-  recentLoans: Loan[];
+  /** `equipment` is null when the item has since been removed */
+  recentLoans: (Omit<Loan, "equipment"> & { equipment: Loan["equipment"] | null })[];
   reservation: { equipmentId: string; equipmentName: string; until: string } | null;
 }
 

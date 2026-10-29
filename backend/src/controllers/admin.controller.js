@@ -164,10 +164,13 @@ export const removeGame = async (req, res) => {
     throw new ApiError(409, `Take back the ${out.map((e) => e.name).join(", ")} before removing ${game.name}.`);
   }
 
-  await prisma.$transaction([
-    prisma.equipment.deleteMany({ where: { id: { in: game.equipments.map((e) => e.id) } } }),
-    prisma.game.delete({ where: { id: game.id } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    // Re-checked in the delete itself: an open loan must keep its item (loans outlive removed items)
+    const ids = game.equipments.map((e) => e.id);
+    const { count } = await tx.equipment.deleteMany({ where: { id: { in: ids }, status: { not: "in_use" } } });
+    if (count !== ids.length) throw new ApiError(409, `Something from ${game.name} was just lent. Take it back first.`);
+    await tx.game.delete({ where: { id: game.id } });
+  });
   publish("equipment.changed", {}, { everyone: true });
   return ok(res, { gameId: game.id }, "Game removed");
 };
@@ -193,7 +196,9 @@ export const removeEquipment = async (req, res) => {
   if (!item) throw new ApiError(404, "That item doesn't exist.");
   if (item.status === "in_use") throw new ApiError(409, `The ${item.name} is out. Mark it returned before removing it.`);
 
-  await prisma.equipment.delete({ where: { id: item.id } });
+  // Re-checked in the delete itself, in case it was lent a moment ago: an open loan must keep its item
+  const { count } = await prisma.equipment.deleteMany({ where: { id: item.id, status: { not: "in_use" } } });
+  if (count === 0) throw new ApiError(409, `The ${item.name} was just lent. Mark it returned before removing it.`);
   publish("equipment.changed", { equipmentId: item.id }, { everyone: true });
   return ok(res, { equipmentId: item.id }, "Equipment removed");
 };

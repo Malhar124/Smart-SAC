@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createItem, createStaff, createStudent, prisma, resetDatabase, signInStaff, signInStudent } from "./helpers.js";
+import { createItem, createPastLoan, createStaff, createStudent, prisma, resetDatabase, signInStaff, signInStudent } from "./helpers.js";
 import { disconnectDB } from "../src/db/index.js";
+import { LATE_GRACE_MINUTES } from "../src/config/policy.js";
 import { zonedParts, zonedTimeToDate } from "../src/lib/time.js";
 
 beforeEach(resetDatabase);
@@ -49,6 +50,19 @@ describe("games and equipment", () => {
     expect((await desk.post("/api/v1/admin/remove-game").send({ gameId: game.id })).status).toBe(200);
     expect(await prisma.equipment.count()).toBe(0);
     expect(await prisma.game.count()).toBe(0);
+  });
+
+  it("keeps a removed item's loans, so late returns still count", async () => {
+    const student = await createStudent();
+    const desk = await signInStaff(await createStaff());
+    const item = await createItem("old racket", "badminton");
+    await createPastLoan({ item, student, minutesLate: LATE_GRACE_MINUTES + 30 });
+
+    expect((await desk.post("/api/v1/admin/remove-equipment").send({ equipmentId: item.id })).status).toBe(200);
+    expect(await prisma.loan.count({ where: { roll_no: student.roll_no } })).toBe(1);
+    const summary = (await desk.get(`/api/v1/admin/get-student/${student.roll_no}`)).body.data;
+    expect(summary.standing.lateReturns).toBe(1);
+    expect(summary.recentLoans[0]).toMatchObject({ late: true, equipment: null });
   });
 
   it("marks an item broken, cancelling a hold (and telling the student) or closing a loan", async () => {
