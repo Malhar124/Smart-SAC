@@ -19,6 +19,7 @@ Developed as a DBMS group project.
 - **Tickets.** Report broken equipment or ask for new equipment, then follow a timeline of status changes and replies from the desk.
 - **Chat and Find players.** Message other students, see unread counts and read receipts, and find people by the games they play.
 - **Notifications.** In-app notifications for holds, due times, ticket replies, room changes and announcements.
+- **Delete my account.** From the Profile page, with the password. Messages, tickets, bookings and notifications go with it; loans stay under the roll number, and nothing may be out at the time.
 
 ### Desk staff
 - **Desk dashboard.** Overdue loans first (with phone numbers), then counts and the full equipment register.

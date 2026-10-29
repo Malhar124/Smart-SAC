@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { app, createStudent, prisma, request, resetDatabase, signInStudent } from "./helpers.js";
+import { app, createItem, createStaff, createStudent, PASSWORD, prisma, request, resetDatabase, signInStaff, signInStudent } from "./helpers.js";
 import { disconnectDB } from "../src/db/index.js";
 import { runCleanup } from "../src/jobs/index.js";
 import { MAX_CODE_ATTEMPTS } from "../src/config/policy.js";
@@ -139,5 +139,34 @@ describe("email codes", () => {
     const second = await prisma.user.findUnique({ where: { id: student.id } });
     expect(second.passwordResetToken).toBe(first.passwordResetToken);
     expect(second.passwordResetExpires).toEqual(first.passwordResetExpires);
+  });
+});
+
+describe("deleting an account", () => {
+  it("needs the password, then removes the account and signs out every device", async () => {
+    const student = await createStudent();
+    const agent = await signInStudent(student);
+    const otherDevice = await signInStudent(student);
+
+    const wrong = await agent.post("/api/v1/users/delete-account").send({ password: "Wrong@123" });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.errors[0].path).toBe("password");
+
+    expect((await agent.post("/api/v1/users/delete-account").send({ password: PASSWORD })).status).toBe(200);
+    expect(await prisma.user.findUnique({ where: { id: student.id } })).toBeNull();
+    expect((await otherDevice.get("/api/v1/users/current-user")).status).toBe(401);
+  });
+
+  it("waits until nothing is out, and keeps the loan record by roll number", async () => {
+    const student = await createStudent();
+    const item = await createItem();
+    const desk = await signInStaff(await createStaff());
+    await desk.post("/api/v1/admin/lend-equipment").send({ equipmentId: item.id, rollNo: student.roll_no, durationMinutes: 60 });
+    const agent = await signInStudent(student);
+
+    expect((await agent.post("/api/v1/users/delete-account").send({ password: PASSWORD })).status).toBe(409);
+    await desk.post("/api/v1/admin/return-equipment").send({ equipmentId: item.id });
+    expect((await agent.post("/api/v1/users/delete-account").send({ password: PASSWORD })).status).toBe(200);
+    expect(await prisma.loan.count({ where: { roll_no: student.roll_no } })).toBe(1);
   });
 });

@@ -13,6 +13,16 @@ import Navbar from "@/components/Navbar";
 import PageHeader from "@/components/PageHeader";
 import { Field, fieldProps } from "@/components/Field";
 import { ErrorState, ListSkeleton } from "@/components/states";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,6 +107,69 @@ const ChangePassword = () => {
         {change.isPending ? "Changing…" : "Change password"}
       </Button>
     </form>
+  );
+};
+
+/** Delete the account after the password is confirmed; the server signs out every device */
+const DeleteAccount = () => {
+  const { signedOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string>();
+
+  const remove = useMutation({
+    mutationFn: () => api.post("/users/delete-account", { password }),
+    onSuccess: () => {
+      toast.success("Your account was deleted");
+      signedOut();
+    },
+    onError: (e) => setError(serverFieldErrors(e).password ?? (e instanceof Error ? e.message : "Couldn't delete your account.")),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!password) return setError("Enter your password");
+    setError(undefined);
+    remove.mutate();
+  };
+
+  return (
+    <>
+      <p className="text-muted-foreground mb-4 max-w-prose">
+        Your messages, tickets, room bookings and notifications are deleted. The desk keeps your loan record under your roll number.
+      </p>
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          setPassword("");
+          setError(undefined);
+        }}
+      >
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" className="text-destructive">
+            Delete my account
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <form onSubmit={submit} className="space-y-4" noValidate>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+              <AlertDialogDescription>This can't be undone. Enter your password to confirm.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <Field id="deletePassword" label="Password" error={error}>
+              <Input type="password" autoComplete="current-password" {...fieldProps("deletePassword", error)} value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            <AlertDialogFooter>
+              <AlertDialogCancel type="button">Keep my account</AlertDialogCancel>
+              <Button type="submit" variant="destructive" disabled={remove.isPending}>
+                {remove.isPending ? "Deleting…" : "Delete account"}
+              </Button>
+            </AlertDialogFooter>
+          </form>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 
@@ -414,6 +487,13 @@ const StudentProfile = () => {
             <section aria-labelledby="password-heading">
               <SectionTitle id="password-heading">Password</SectionTitle>
               <ChangePassword />
+            </section>
+          )}
+
+          {!editMode && (
+            <section aria-labelledby="delete-heading">
+              <SectionTitle id="delete-heading">Delete account</SectionTitle>
+              <DeleteAccount />
             </section>
           )}
         </div>

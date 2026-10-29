@@ -204,6 +204,30 @@ export const resetPassword = async (req, res) => {
   return res.status(200).json(new ApiResponse(200, {}, "Password reset. Sign in with your new password."));
 };
 
+/**
+ * Delete the signed-in student's account. Messages, tickets, bookings, notifications and sessions go
+ * with it (schema cascades); loans stay under the roll number, so a borrowing block can't be dodged.
+ */
+export const deleteAccount = async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, password: true, roll_no: true } });
+  if (!(await isPasswordCorrect(req.body.password, user.password))) {
+    throw new ApiError(400, "Your password is wrong.", [{ path: "password", message: "Your password is wrong." }]);
+  }
+  // The desk needs the phone number on the account to chase anything still out
+  const out = await prisma.loan.count({ where: { roll_no: normalizeRollNo(user.roll_no), returnedAt: null } });
+  if (out > 0) throw new ApiError(409, "Return what you have out first, then delete your account.");
+
+  await prisma.user.delete({ where: { id: user.id } });
+  // A hold or room booking it had is gone too
+  publish("equipment.changed", {}, { everyone: true });
+  publish("room.changed", {}, { everyone: true });
+  return res
+    .status(200)
+    .clearCookie("accessToken", cookieOptions)
+    .clearCookie("refreshToken", cookieOptions)
+    .json(new ApiResponse(200, {}, "Account deleted"));
+};
+
 /** The signed-in student, plus what they have out and their borrowing standing */
 export const getCurrentUser = async (req, res) => {
   const now = new Date();

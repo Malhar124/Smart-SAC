@@ -51,6 +51,8 @@ const ChangePasswordBody = z.object({
   newPassword: v.password,
 });
 
+const DeleteAccountBody = z.object({ password: z.string().min(1, "Enter your password") });
+
 const ResetPasswordBody = z
   .object({ email: v.email, token: v.otp, newPassword: v.password, confirmPassword: z.string() })
   .refine((b) => b.newPassword === b.confirmPassword, { path: ["confirmPassword"], message: "The passwords don't match" });
@@ -133,6 +135,8 @@ post("/reset-password", { summary: "Set a new password with a reset code", limit
 
 get("/current-user", { summary: "The signed-in student with their loans, standing, hold and room bookings", auth: "user" }, user.getCurrentUser);
 post("/update-account-details", { summary: "Update profile fields and game ratings", auth: "user", body: UpdateProfileBody }, user.updateAccountDetails);
+// shortcut: the body has no email, so this limit is per address (shared on campus Wi-Fi); fine while deletions are rare
+post("/delete-account", { summary: "Delete the signed-in student's account (needs the password; nothing may be out)", auth: "user", limiter: authLimiter, body: DeleteAccountBody, tags: ["Auth"] }, user.deleteAccount);
 
 // ---------------------------------------------------------------- dashboard and equipment
 

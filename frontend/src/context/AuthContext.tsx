@@ -15,6 +15,8 @@ interface AuthContextValue {
   /** Sign in; throws ApiError (with field errors or a code) so the form can show it */
   login: (kind: AccountKind, credentials: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  /** Forget the account here when the server already ended the session, e.g. after deleting the account */
+  signedOut: () => void;
   /** Re-read the signed-in account, e.g. after editing the profile */
   reload: () => Promise<void>;
 }
@@ -135,6 +137,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     [navigate, tryKind]
   );
 
+  const signedOut = useCallback(() => {
+    clear();
+    navigate("/", { replace: true });
+  }, [clear, navigate]);
+
   const logout = useCallback(async () => {
     if (authType) {
       try {
@@ -143,17 +150,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Signing out locally is what matters; the server session expires on its own
       }
     }
-    clear();
-    navigate("/", { replace: true });
-  }, [authType, clear, navigate]);
+    signedOut();
+  }, [authType, signedOut]);
 
   const reload = useCallback(async () => {
     if (authType) await tryKind(authType);
   }, [authType, tryKind]);
 
   const value = useMemo(
-    () => ({ user, admin, authType, isLoading, login, logout, reload }),
-    [user, admin, authType, isLoading, login, logout, reload]
+    () => ({ user, admin, authType, isLoading, login, logout, signedOut, reload }),
+    [user, admin, authType, isLoading, login, logout, signedOut, reload]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
