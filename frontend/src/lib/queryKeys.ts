@@ -29,7 +29,9 @@ export const qk = {
 
 /** Which queries each live event makes stale */
 export const invalidationsFor: Record<string, readonly (readonly string[])[]> = {
-  "equipment.changed": [qk.studentDashboard, qk.staffDashboard, qk.staffEquipment, qk.staffGames, qk.me, qk.studentSummaryAll, qk.recentHistory, qk.historyOverview, qk.itemHistory],
+  "equipment.changed": [qk.studentDashboard, qk.staffDashboard, qk.staffEquipment, qk.staffGames, qk.studentSummaryAll, qk.recentHistory, qk.historyOverview, qk.itemHistory],
+  // Sent only to the students whose own loans or hold changed
+  "account.changed": [qk.me],
   "room.changed": [qk.rooms, qk.myRoomBookings, qk.me],
   "ticket.changed": [qk.myTickets, qk.ticketAll, qk.staffTickets, qk.staffDashboard, qk.studentDashboard],
   "message.new": [qk.conversations, qk.messagesAll, qk.studentDashboard],

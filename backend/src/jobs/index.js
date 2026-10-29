@@ -4,6 +4,7 @@ import { logger } from "../lib/logger.js";
 import { publish } from "../lib/events.js";
 import { formatClock } from "../lib/time.js";
 import { notify } from "../services/notifications.service.js";
+import { announceEquipmentChange } from "../services/equipment.service.js";
 import {
   DAY,
   DUE_SOON_MINUTES,
@@ -63,7 +64,7 @@ const clearExpiredHolds = async (now) => {
       link: "/student/dashboard",
     });
   }
-  if (items.length > 0) publish("equipment.changed", {}, { everyone: true });
+  if (items.length > 0) announceEquipmentChange(null, items.map((i) => i.reservedById));
   return items.length;
 };
 
@@ -107,7 +108,7 @@ const flagOverdue = async (now) => {
       });
     }
   }
-  if (loans.length > 0) publish("equipment.changed", {}, { everyone: true });
+  if (loans.length > 0) announceEquipmentChange(null, loans.map((l) => l.userId));
   return loans.length;
 };
 

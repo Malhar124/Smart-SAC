@@ -37,6 +37,16 @@ const blockedError = (standing) =>
     { code: "BORROWING_BLOCKED", reason: standing.reason, blockedUntil: standing.blockedUntil, message: standing.message },
   ]);
 
+/**
+ * Every open tab refreshes the rack; only the students whose own loans or hold changed refresh their
+ * account view, so one lend doesn't make every student's tab reload it.
+ */
+export const announceEquipmentChange = (equipmentId, userIds = []) => {
+  publish("equipment.changed", equipmentId ? { equipmentId } : {}, { everyone: true });
+  const users = [...new Set(userIds.filter(Boolean))];
+  if (users.length > 0) publish("account.changed", {}, { users });
+};
+
 // ---------------------------------------------------------------- views
 
 const equipmentInclude = {
@@ -148,19 +158,21 @@ export const lendEquipment = async ({ equipmentId, rollNo, durationMinutes, admi
     return { loan, equipment, student: user, overrodeBlock: standing.blocked };
   });
 
-  publish("equipment.changed", { equipmentId }, { everyone: true });
+  announceEquipmentChange(equipmentId, [result.student?.id]);
   return result;
 };
 
 /** Take an item back. Reports whether it came back late (after the grace period). */
 export const returnEquipment = async ({ equipmentId, adminId }) => {
   const now = new Date();
+  let borrowerId = null;
   const result = await prisma.$transaction(async (tx) => {
     const item = await lockEquipment(tx, equipmentId);
     if (item.status !== "in_use") throw new ApiError(409, `The ${item.name} isn't out.`);
 
     const loan = await tx.loan.findFirst({ where: { equipmentId, returnedAt: null }, orderBy: { issuedAt: "desc" } });
     if (loan) await tx.loan.update({ where: { id: loan.id }, data: { returnedAt: now, returnedToId: adminId } });
+    borrowerId = loan?.userId ?? item.userId;
 
     const equipment = await tx.equipment.update({
       where: { id: equipmentId },
@@ -173,14 +185,14 @@ export const returnEquipment = async ({ equipmentId, adminId }) => {
     return { equipment, late, rollNo: loan?.roll_no ?? item.roll_no };
   });
 
-  publish("equipment.changed", { equipmentId }, { everyone: true });
+  announceEquipmentChange(equipmentId, [borrowerId]);
   return result;
 };
 
 /** Mark an item free or broken. An item that was out is treated as returned; a hold is cancelled. */
 export const setEquipmentStatus = async ({ equipmentId, status, adminId }) => {
   const now = new Date();
-  const { equipment, cancelledHold, itemName } = await prisma.$transaction(async (tx) => {
+  const { equipment, cancelledHold, itemName, holderId } = await prisma.$transaction(async (tx) => {
     const item = await lockEquipment(tx, equipmentId);
     if (item.status === status) {
       throw new ApiError(409, `The ${item.name} is already ${status === "broken" ? "marked broken" : "free"}.`);
@@ -208,7 +220,7 @@ export const setEquipmentStatus = async ({ equipmentId, status, adminId }) => {
     await tx.equipmentHistory.create({
       data: { equipmentId, status, changedById: adminId, changedAt: now, expireAt: historyExpiry(now) },
     });
-    return { equipment: updated, cancelledHold: hold, itemName: item.name };
+    return { equipment: updated, cancelledHold: hold, itemName: item.name, holderId: item.userId };
   });
 
   if (cancelledHold) {
@@ -219,7 +231,7 @@ export const setEquipmentStatus = async ({ equipmentId, status, adminId }) => {
       link: "/student/dashboard",
     });
   }
-  publish("equipment.changed", { equipmentId }, { everyone: true });
+  announceEquipmentChange(equipmentId, [holderId, cancelledHold?.userId]);
   return equipment;
 };
 
@@ -241,7 +253,7 @@ export const releaseReservation = async ({ equipmentId }) => {
     body: "You can reserve it again from your dashboard if it's still free.",
     link: "/student/dashboard",
   });
-  publish("equipment.changed", { equipmentId }, { everyone: true });
+  announceEquipmentChange(equipmentId, [hold.userId]);
 };
 
 // ---------------------------------------------------------------- student actions
@@ -276,7 +288,7 @@ export const reserveEquipment = async ({ equipmentId, user }) => {
     }
   });
 
-  publish("equipment.changed", { equipmentId }, { everyone: true });
+  announceEquipmentChange(equipmentId, [user.id]);
   return { equipmentId, reservedUntil };
 };
 
@@ -286,7 +298,7 @@ export const cancelReservation = async ({ equipmentId, userId }) => {
     data: { reservedById: null, reservedUntil: null, reservationRemindedAt: null },
   });
   if (count === 0) throw new ApiError(404, "You don't have a reservation on this item.");
-  publish("equipment.changed", { equipmentId }, { everyone: true });
+  announceEquipmentChange(equipmentId, [userId]);
 };
 
 // ---------------------------------------------------------------- lookups

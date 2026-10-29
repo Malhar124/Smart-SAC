@@ -7,7 +7,7 @@ import { cookieOptions, hashPassword, isPasswordCorrect, isStaffEmail, ROLES } f
 import { endSession, rotateSession, startSession } from "../services/session.service.js";
 import { checkCode, issueCode } from "../services/codes.service.js";
 import { deliverCode } from "../utils/mail.js";
-import { listEquipmentForStaff, listOverdueLoans } from "../services/equipment.service.js";
+import { announceEquipmentChange, listEquipmentForStaff, listOverdueLoans } from "../services/equipment.service.js";
 import { notifyAllStudents } from "../services/notifications.service.js";
 import { DAY } from "../config/policy.js";
 
@@ -199,7 +199,7 @@ export const removeEquipment = async (req, res) => {
   // Re-checked in the delete itself, in case it was lent a moment ago: an open loan must keep its item
   const { count } = await prisma.equipment.deleteMany({ where: { id: item.id, status: { not: "in_use" } } });
   if (count === 0) throw new ApiError(409, `The ${item.name} was just lent. Mark it returned before removing it.`);
-  publish("equipment.changed", { equipmentId: item.id }, { everyone: true });
+  announceEquipmentChange(item.id, [item.reservedById]);
   return ok(res, { equipmentId: item.id }, "Equipment removed");
 };
 

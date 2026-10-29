@@ -10,6 +10,7 @@ import {
   signInStudent,
 } from "./helpers.js";
 import { disconnectDB } from "../src/db/index.js";
+import { subscribe } from "../src/lib/events.js";
 import { LATE_GRACE_MINUTES, LATE_RETURN_LIMIT } from "../src/config/policy.js";
 
 beforeEach(resetDatabase);
@@ -61,6 +62,42 @@ describe("reservations", () => {
     const agents = await Promise.all([createStudent(), createStudent()].map(async (p) => signInStudent(await p)));
     const results = await Promise.all(agents.map((a) => a.post("/api/v1/users/reserve-equipment").send({ equipmentId: item.id })));
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  });
+});
+
+describe("live updates", () => {
+  /** A fake browser on the events stream; collects the event types it receives */
+  const listen = (account) => {
+    const types = [];
+    const handlers = {};
+    const res = {
+      status: () => res,
+      set: () => res,
+      flushHeaders() {},
+      write(chunk) {
+        const data = /^data: (.*)\n\n$/.exec(chunk)?.[1];
+        if (data) types.push(JSON.parse(data).type);
+      },
+    };
+    subscribe({ account, on: (event, fn) => (handlers[event] = fn) }, res);
+    return { types, close: () => handlers.close() };
+  };
+
+  it("tells every tab the rack changed, but only the borrower that their own loans changed", async () => {
+    const [borrower, other] = [await createStudent(), await createStudent()];
+    const item = await createItem();
+    const desk = await signInStaff(await createStaff());
+    const borrowerTab = listen({ kind: "user", id: borrower.id });
+    const otherTab = listen({ kind: "user", id: other.id });
+
+    expect((await lend(desk, { equipmentId: item.id, rollNo: borrower.roll_no })).status).toBe(200);
+    expect((await desk.post("/api/v1/admin/return-equipment").send({ equipmentId: item.id })).status).toBe(200);
+    borrowerTab.close();
+    otherTab.close();
+
+    expect(borrowerTab.types.filter((t) => t === "account.changed")).toHaveLength(2);
+    expect(otherTab.types).toContain("equipment.changed");
+    expect(otherTab.types).not.toContain("account.changed");
   });
 });
 
