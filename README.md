@@ -97,9 +97,9 @@ Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backen
 ## Run the whole stack in Docker
 
 ```bash
-docker compose up --build     # http://localhost:8080
+SEED_DEMO=true docker compose up --build     # http://localhost:8080, with demo data
 ```
-This builds the API and web app, runs the migrations and seeds demo data into its own database volume (it never touches the development database above). nginx serves the app and proxies `/api`, including the live-updates stream. Set real secrets in a `.env` file next to `docker-compose.yml` for anything beyond a local demo.
+This builds the API and web app and runs the migrations in its own database volume (it never touches the development database above). `SEED_DEMO=true` adds the demo data and sign-ins listed above; leave it out anywhere other people can reach, because the demo staff password is public. nginx serves the app and proxies `/api`, including the live-updates stream. Set real secrets in a `.env` file next to `docker-compose.yml` for anything beyond a local demo.
 
 ---
 

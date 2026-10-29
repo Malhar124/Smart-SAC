@@ -45,8 +45,9 @@ services:
       SPORTS_HEAD_EMAIL: ${SPORTS_HEAD_EMAIL:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kolkata}
       SENTRY_DSN: ${SENTRY_DSN:-}
-      # Fill a fresh database with demo data (skipped if it already has accounts)
-      SEED_DEMO: ${SEED_DEMO:-true}
+      # Demo data, including a staff login whose password is in the README. Opt in for a local demo only:
+      # `SEED_DEMO=true docker compose up --build` (skipped if the database already has accounts)
+      SEED_DEMO: ${SEED_DEMO:-false}
 
   frontend:
     build:
