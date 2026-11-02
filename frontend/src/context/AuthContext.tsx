@@ -146,8 +146,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (authType) {
       try {
         await api.post(authType === "student" ? "/users/logout" : "/admin/logout");
-      } catch {
-        // Signing out locally is what matters; the server session expires on its own
+      } catch (error) {
+        // A 401 means the session already ended. Otherwise the httpOnly cookies still work, and the next
+        // person at this computer would be signed in as this account, so stay signed in and say so.
+        if (!(isApiError(error) && error.status === 401)) {
+          toast.error("Couldn't sign out. Check the connection and try again.");
+          return;
+        }
       }
     }
     signedOut();
