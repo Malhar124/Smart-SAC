@@ -169,4 +169,14 @@ describe("deleting an account", () => {
     expect((await agent.post("/api/v1/users/delete-account").send({ password: PASSWORD })).status).toBe(200);
     expect(await prisma.loan.count({ where: { roll_no: student.roll_no } })).toBe(1);
   });
+
+  it("limits password guesses per student, not per shared campus address", async () => {
+    const guesser = await signInStudent(await createStudent());
+    const classmate = await signInStudent(await createStudent());
+    for (let i = 0; i < 10; i += 1) {
+      expect((await guesser.post("/api/v1/users/delete-account").send({ password: "Wrong@123" })).status).toBe(400);
+    }
+    expect((await guesser.post("/api/v1/users/delete-account").send({ password: "Wrong@123" })).status).toBe(429);
+    expect((await classmate.post("/api/v1/users/delete-account").send({ password: "Wrong@123" })).status).toBe(400);
+  });
 });

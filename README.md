@@ -196,6 +196,7 @@ Defined once in `backend/src/config/policy.js`:
 | Borrowing block | 3 late returns in 30 days, for 7 days; or while anything is overdue |
 | Room bookings | Whole hours, 6:00 to 22:00, up to 2 hours, up to 7 days ahead, 2 upcoming per student; the hour under way can still be booked |
 | Email codes | 6 digits, 5 tries per code, a new code at most once a minute; sign-up and staff codes last 24 hours, student reset codes 10 minutes |
+| Chat | 30 messages a minute per student |
 | Unconfirmed sign-ups | Hold nothing (a newer sign-up with the same email, username, phone or roll number replaces them) and are deleted when their code expires |
 | Retention | History and notifications 90 days; sessions end 10 days after their last refresh |
 

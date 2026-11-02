@@ -22,6 +22,14 @@ const seedConversation = async (a, b, count) => {
 };
 
 describe("chat", () => {
+  it("limits how many messages a student can send in a minute", async () => {
+    const [me, them] = [await createStudent(), await createStudent()];
+    const agent = await signInStudent(me);
+    const send = (content) => agent.post("/api/v1/users/send-message").send({ receiverId: them.id, content });
+    for (let i = 0; i < 30; i += 1) expect((await send(`hi ${i}`)).status).toBe(201);
+    expect((await send("one more")).status).toBe(429);
+  });
+
   it("loads the latest page first and older pages on request, in time order", async () => {
     const [a, b] = [await createStudent(), await createStudent()];
     const total = MESSAGES_PAGE_SIZE + 15;

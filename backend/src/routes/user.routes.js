@@ -1,13 +1,17 @@
 import { z } from "../lib/zod.js";
 import { createRoutes } from "../lib/route.js";
-import { authLimiter } from "../middlewares/rateLimit.middleware.js";
+import { authLimiter, rateLimit } from "../middlewares/rateLimit.middleware.js";
 import * as v from "../validation/common.js";
 import * as user from "../controllers/user.controller.js";
 import * as features from "../controllers/features.controller.js";
-import { MESSAGES_PAGE_SIZE, ROOM_MAX_HOURS_PER_BOOKING } from "../config/policy.js";
+import { MESSAGES_PAGE_SIZE, MESSAGES_PER_MINUTE, MINUTE, ROOM_MAX_HOURS_PER_BOOKING } from "../config/policy.js";
 
 const routes = createRoutes({ prefix: "/users", tag: "Students" });
 const { get, post } = routes;
+
+// Counted per student (these routes run auth first), so classmates on one campus address don't share a count
+const deleteAccountLimiter = rateLimit({ windowMs: 15 * MINUTE, max: 10, keyBy: (req) => req.user.id });
+const messageLimiter = rateLimit({ windowMs: MINUTE, max: MESSAGES_PER_MINUTE, keyBy: (req) => req.user.id });
 
 // ---------------------------------------------------------------- schemas
 
@@ -135,8 +139,7 @@ post("/reset-password", { summary: "Set a new password with a reset code", limit
 
 get("/current-user", { summary: "The signed-in student with their loans, standing, hold and room bookings", auth: "user" }, user.getCurrentUser);
 post("/update-account-details", { summary: "Update profile fields and game ratings", auth: "user", body: UpdateProfileBody }, user.updateAccountDetails);
-// shortcut: the body has no email, so this limit is per address (shared on campus Wi-Fi); fine while deletions are rare
-post("/delete-account", { summary: "Delete the signed-in student's account (needs the password; nothing may be out)", auth: "user", limiter: authLimiter, body: DeleteAccountBody, tags: ["Auth"] }, user.deleteAccount);
+post("/delete-account", { summary: "Delete the signed-in student's account (needs the password; nothing may be out)", auth: "user", limiter: deleteAccountLimiter, body: DeleteAccountBody, tags: ["Auth"] }, user.deleteAccount);
 
 // ---------------------------------------------------------------- dashboard and equipment
 
@@ -149,7 +152,7 @@ get("/get-usage", { summary: "Average items out per hour over recent days, from 
 
 get("/get-all-players", { summary: "Other students and the games they play", auth: "user", tags: ["Chat"] }, user.getAllPlayers);
 get("/get-games", { summary: "Games offered at the SAC", auth: "user" }, user.getGames);
-post("/send-message", { summary: "Send a chat message", auth: "user", body: SendMessageBody, tags: ["Chat"] }, user.sendMessage);
+post("/send-message", { summary: "Send a chat message", auth: "user", limiter: messageLimiter, body: SendMessageBody, tags: ["Chat"] }, user.sendMessage);
 get("/get-conversations", { summary: "Latest message and unread count per conversation", auth: "user", tags: ["Chat"] }, user.getConversations);
 get("/get-messages/:otherUserId", { summary: "A page of a conversation, newest last; marks the other student's messages read", auth: "user", params: v.idParam("otherUserId"), query: MessagesQuery, tags: ["Chat"] }, user.getMessages);
 

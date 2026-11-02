@@ -32,6 +32,8 @@ export const NOTIFICATION_RETENTION_DAYS = 90;
 
 /** Chat messages loaded per page (older ones load on request) */
 export const MESSAGES_PAGE_SIZE = 50;
+/** Chat messages one student can send in a minute, so nobody can flood a classmate */
+export const MESSAGES_PER_MINUTE = 30;
 
 /** Email codes (verification, password reset): wrong guesses allowed per code, and the wait between codes */
 export const MAX_CODE_ATTEMPTS = 5;

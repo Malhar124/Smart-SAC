@@ -43,7 +43,7 @@ export const validateRequest =
  *
  *   routes.post("/book-room", { summary, auth: "user", body: BookRoomBody }, handler)
  *
- * registers the Express route (rate limit -> auth -> validation -> handler) and the matching
+ * registers the Express route (auth -> rate limit -> validation -> handler) and the matching
  * OpenAPI operation, so the docs at /api/docs can't drift from what the server accepts.
  */
 export const createRoutes = ({ prefix, tag }) => {
@@ -54,8 +54,9 @@ export const createRoutes = ({ prefix, tag }) => {
     (path, spec, ...handlers) => {
       const { summary, description, auth, body, query, params, limiter, tags } = spec;
       const chain = [];
-      if (limiter) chain.push(limiter);
+      // Auth first, so a limiter on a signed-in route can count per account (req.user)
       if (auth) chain.push(AUTH[auth]);
+      if (limiter) chain.push(limiter);
       if (body || query || params) chain.push(validateRequest({ body, query, params }));
       router[method](path, ...chain, ...handlers);
 
