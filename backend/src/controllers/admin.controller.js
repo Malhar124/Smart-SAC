@@ -105,16 +105,6 @@ export const refreshAccessToken = async (req, res) => {
 
 export const getCurrentAdmin = async (req, res) => ok(res, req.user, "Current staff member");
 
-export const updateAccountDetails = async (req, res) => {
-  if (req.body.email && !isStaffEmail(req.body.email)) {
-    throw new ApiError(400, "That email isn't on the staff list.", [
-      { path: "email", message: "Only emails in ADMIN_EMAILS can be staff accounts. Ask the SAC office to add it first." },
-    ]);
-  }
-  const admin = await prisma.admin.update({ where: { id: req.user.id }, data: req.body, select: ADMIN_PUBLIC_FIELDS });
-  return ok(res, admin, "Account saved");
-};
-
 // ---------------------------------------------------------------- dashboard
 
 export const dashboardDetails = async (req, res) => {

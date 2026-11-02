@@ -31,15 +31,10 @@ describe("the staff list (ADMIN_EMAILS)", () => {
     expect(login.status).toBe(401);
   });
 
-  it("limits the email a staff member can switch their account to", async () => {
+  it("won't move a staff account onto another listed email without that inbox's code", async () => {
     const desk = await signInStaff(await createStaff());
-    const outside = await desk.post("/api/v1/admin/update-account-details").send({ email: "someone@iiita.ac.in" });
-    expect(outside.status).toBe(400);
-    expect(outside.body.errors[0].path).toBe("email");
-
     env.ADMIN_EMAILS = `${LIST},office@iiita.ac.in`;
-    const listed = await desk.post("/api/v1/admin/update-account-details").send({ email: "office@iiita.ac.in", name: "Front Office" });
-    expect(listed.status).toBe(200);
-    expect(listed.body.data).toMatchObject({ email: "office@iiita.ac.in", name: "Front Office" });
+    const moved = await desk.post("/api/v1/admin/update-account-details").send({ email: "office@iiita.ac.in" });
+    expect(moved.status).toBe(404);
   });
 });

@@ -16,9 +16,6 @@ const StaffName = v.shortText("Name", 60);
 const RegisterBody = z.object({ email: v.email });
 const ConfirmRegistrationBody = z.object({ name: StaffName, email: v.email, password: v.password, token: v.otp });
 const LoginBody = z.object({ email: v.email, password: z.string().min(1, "Enter your password") });
-const UpdateAccountBody = z
-  .object({ name: StaffName.optional(), email: v.email.optional() })
-  .refine((b) => b.name !== undefined || b.email !== undefined, { message: "Change at least one field" });
 
 const EquipmentIdBody = z.object({ equipmentId: v.id });
 const LendBody = z.object({
@@ -86,7 +83,6 @@ post("/login", { summary: "Staff sign in; sets the session cookies", limiter: au
 post("/logout", { summary: "Sign out and revoke the refresh token", auth: "admin", tags: ["Auth"] }, admin.logoutAdmin);
 post("/refresh-token", { summary: "Rotate the session cookies using the refresh-token cookie", tags: ["Auth"] }, admin.refreshAccessToken);
 get("/current-admin", { summary: "The signed-in staff member", auth: "admin", tags: ["Auth"] }, admin.getCurrentAdmin);
-post("/update-account-details", { summary: "Change the staff member's name or email", auth: "admin", body: UpdateAccountBody, tags: ["Auth"] }, admin.updateAccountDetails);
 
 // ---------------------------------------------------------------- desk
 
