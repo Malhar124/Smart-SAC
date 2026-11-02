@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { app, cookieValue, createStaff, createStudent, prisma, request, resetDatabase, signInStudent, PASSWORD } from "./helpers.js";
+import { app, cookieValue, createStaff, createStudent, prisma, request, resetDatabase, signInStaff, signInStudent, PASSWORD } from "./helpers.js";
 import { disconnectDB } from "../src/db/index.js";
 
 const registration = {
@@ -147,14 +147,25 @@ describe("staff accounts", () => {
 
     const { emailVerificationToken: code } = await prisma.admin.findUnique({ where: { email: details.email } });
     const confirmed = await request(app).post("/api/v1/admin/confirm-registration").send({ ...details, token: code });
-    expect(confirmed.status).toBe(201);
+    expect(confirmed.status).toBe(200);
     expect(confirmed.body.data.name).toBe("Desk Staff");
     expect((await request(app).post("/api/v1/admin/login").send(details)).status).toBe(200);
   });
 
-  it("won't send a code for a staff email that already has an account", async () => {
+  it("resets a forgotten staff password with the emailed code and signs out every device", async () => {
     const staff = await createStaff();
-    expect((await request(app).post("/api/v1/admin/register").send({ email: staff.email })).status).toBe(409);
+    const desk = await signInStaff(staff);
+    expect((await request(app).post("/api/v1/admin/register").send({ email: staff.email })).status).toBe(200);
+
+    const { emailVerificationToken: code } = await prisma.admin.findUnique({ where: { email: staff.email } });
+    const reset = await request(app)
+      .post("/api/v1/admin/confirm-registration")
+      .send({ name: "Desk Staff", email: staff.email, password: "Changed@123", token: code });
+    expect(reset.status).toBe(200);
+
+    expect((await desk.get("/api/v1/admin/dashboard")).status).toBe(401);
+    expect((await request(app).post("/api/v1/admin/login").send({ email: staff.email, password: PASSWORD })).status).toBe(401);
+    expect((await request(app).post("/api/v1/admin/login").send({ email: staff.email, password: "Changed@123" })).status).toBe(200);
   });
 
   it("signs staff in", async () => {

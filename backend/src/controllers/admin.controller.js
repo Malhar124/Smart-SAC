@@ -4,7 +4,7 @@ import { prisma } from "../db/index.js";
 import { publish } from "../lib/events.js";
 import { ADMIN_PUBLIC_FIELDS } from "../middlewares/auth.middleware.js";
 import { cookieOptions, hashPassword, isPasswordCorrect, isStaffEmail, ROLES } from "../utils/auth.js";
-import { endSession, rotateSession, startSession } from "../services/session.service.js";
+import { endSession, endSessionsFor, rotateSession, startSession } from "../services/session.service.js";
 import { checkCode, issueCode } from "../services/codes.service.js";
 import { deliverCode } from "../utils/mail.js";
 import { announceEquipmentChange, listEquipmentForStaff, listOverdueLoans } from "../services/equipment.service.js";
@@ -15,7 +15,10 @@ const ok = (res, data, message, status = 200) => res.status(status).json(new Api
 
 // ---------------------------------------------------------------- account
 
-/** Step 1 of a staff sign-up: email a code, so only someone who reads that inbox can set the password */
+/**
+ * Step 1 of a staff sign-up, or of a reset for staff who forgot their password: email a code, so only
+ * someone who reads that inbox can set the password
+ */
 export const registerAdmin = async (req, res) => {
   const { email } = req.body;
   if (!isStaffEmail(email)) {
@@ -24,8 +27,7 @@ export const registerAdmin = async (req, res) => {
 
   // A row without a password is an unclaimed staff email; it holds the code until it's confirmed
   const admin = await prisma.admin.upsert({ where: { email }, update: {}, create: { email } });
-  if (admin.password) throw new ApiError(409, "A staff account with this email already exists.");
-
+  // shortcut: a reset reuses the 24-hour sign-up code fields; add reset fields to Admin if staff need a shorter window
   const code = await issueCode(admin, "verification", "admin");
   if (code) {
     try {
@@ -37,7 +39,7 @@ export const registerAdmin = async (req, res) => {
   return ok(res, {}, "We emailed a 6-digit code to that address.");
 };
 
-/** Step 2: the emailed code sets the name and password */
+/** Step 2: the emailed code sets the name and password, and signs out every device on a reset */
 export const confirmAdminRegistration = async (req, res) => {
   const { email, token, name, password } = req.body;
   const adminId = await checkCode("verification", email, token, "admin");
@@ -55,7 +57,8 @@ export const confirmAdminRegistration = async (req, res) => {
     },
     select: ADMIN_PUBLIC_FIELDS,
   });
-  return ok(res, admin, "Staff account created", 201);
+  await endSessionsFor({ adminId });
+  return ok(res, admin, "Staff password set. Sign in with it.");
 };
 
 export const loginAdmin = async (req, res) => {

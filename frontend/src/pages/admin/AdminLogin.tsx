@@ -62,9 +62,9 @@ const AdminLogin = () => {
           {pending ? "Signing in…" : "Sign in"}
         </Button>
         <p className="text-center text-sm">
-          First time at the desk?{" "}
+          First time at the desk, or forgot your password?{" "}
           <Link to="/admin/register" className="font-medium text-primary hover:underline">
-            Create a staff account
+            Get an email code
           </Link>
         </p>
       </form>

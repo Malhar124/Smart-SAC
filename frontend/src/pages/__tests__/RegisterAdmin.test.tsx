@@ -11,7 +11,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 describe("RegisterAdmin", () => {
-  it("emails a code first, then creates the account with it", async () => {
+  it("emails a code first, then sets the password with it (a new account or a reset)", async () => {
     vi.mocked(api.post).mockResolvedValue({});
     renderPage(<RegisterAdmin />);
     await userEvent.type(screen.getByLabelText(/your name/i), "Desk Staff");
@@ -22,7 +22,7 @@ describe("RegisterAdmin", () => {
     expect(api.post).toHaveBeenLastCalledWith("/admin/register", { email: "desk@iiita.ac.in" });
 
     await userEvent.type(await screen.findByLabelText(/code from the email/i), "123456");
-    await userEvent.click(screen.getByRole("button", { name: /create staff account/i }));
+    await userEvent.click(screen.getByRole("button", { name: /set password/i }));
     expect(api.post).toHaveBeenLastCalledWith("/admin/confirm-registration", {
       name: "Desk Staff",
       email: "desk@iiita.ac.in",

@@ -80,8 +80,8 @@ const CancelBookingBody = z.object({ reason: z.string().trim().max(200).optional
 
 // ---------------------------------------------------------------- account
 
-post("/register", { summary: "Email a code to a staff address (must be in ADMIN_EMAILS) to start a staff account", limiter: authLimiter, body: RegisterBody, tags: ["Auth"] }, admin.registerAdmin);
-post("/confirm-registration", { summary: "Create the staff account with the emailed code, a name and a password", limiter: authLimiter, body: ConfirmRegistrationBody, tags: ["Auth"] }, admin.confirmAdminRegistration);
+post("/register", { summary: "Email a code to a staff address (must be in ADMIN_EMAILS) to create its account or reset its password", limiter: authLimiter, body: RegisterBody, tags: ["Auth"] }, admin.registerAdmin);
+post("/confirm-registration", { summary: "Set the staff name and password with the emailed code; a reset signs out every device", limiter: authLimiter, body: ConfirmRegistrationBody, tags: ["Auth"] }, admin.confirmAdminRegistration);
 post("/login", { summary: "Staff sign in; sets the session cookies", limiter: authLimiter, body: LoginBody, tags: ["Auth"] }, admin.loginAdmin);
 post("/logout", { summary: "Sign out and revoke the refresh token", auth: "admin", tags: ["Auth"] }, admin.logoutAdmin);
 post("/refresh-token", { summary: "Rotate the session cookies using the refresh-token cookie", tags: ["Auth"] }, admin.refreshAccessToken);

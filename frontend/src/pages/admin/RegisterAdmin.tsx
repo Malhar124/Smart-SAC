@@ -13,7 +13,7 @@ const RegisterAdmin = () => {
   const [values, setValues] = useState({ name: "", email: "", password: "", token: "" });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pending, setPending] = useState(false);
-  // The account is created only with the code emailed to the staff address
+  // The password is set only with the code emailed to the staff address, for a new account or a reset
   const [codeSent, setCodeSent] = useState(false);
 
   const submit = async (e: FormEvent) => {
@@ -31,11 +31,11 @@ const RegisterAdmin = () => {
         return;
       }
       await api.post("/admin/confirm-registration", result.data);
-      toast.success("Staff account created", { description: "Sign in to open the desk." });
+      toast.success("Password set", { description: "Sign in to open the desk." });
       navigate("/admin/login");
     } catch (error) {
       setErrors(serverFieldErrors(error));
-      toast.error(error instanceof Error ? error.message : "Couldn't create the account.");
+      toast.error(error instanceof Error ? error.message : "Couldn't set the password.");
     } finally {
       setPending(false);
     }
@@ -44,8 +44,11 @@ const RegisterAdmin = () => {
   return (
     <AuthLayout>
       <div className="space-y-3">
-        <h1 className="type-title text-5xl">Create a staff account</h1>
-        <p className="text-muted-foreground">Your email must be on the SAC staff list. Your name appears on loans and ticket replies.</p>
+        <h1 className="type-title text-5xl">Staff account</h1>
+        <p className="text-muted-foreground">
+          Create your staff account, or set a new password if you forgot it. Your email must be on the SAC staff list. Your
+          name appears on loans and ticket replies.
+        </p>
       </div>
       <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
         <Field id="name" label="Your name" error={errors.name}>
@@ -88,7 +91,7 @@ const RegisterAdmin = () => {
           </Field>
         )}
         <Button type="submit" className="w-full" disabled={pending}>
-          {codeSent ? (pending ? "Creating account…" : "Create staff account") : pending ? "Sending code…" : "Email me a code"}
+          {codeSent ? (pending ? "Saving…" : "Set password") : pending ? "Sending code…" : "Email me a code"}
         </Button>
         <p className="text-center text-sm">
           Already have one?{" "}

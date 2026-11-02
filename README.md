@@ -88,7 +88,7 @@ npm run dev                   # http://localhost:5173
 Leave `EMAIL_USER` / `EMAIL_PASS` empty and verification and reset codes are printed in the backend log instead of emailed. For real email with Gmail, use an [App Password](https://support.google.com/accounts/answer/185833).
 
 ### Staff accounts
-Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`: a 6-digit code goes to that address, and the password is set only with it. Removing an email from the list signs that account out and stops it signing in again.
+Staff aren't created through sign-up. Add the email to `ADMIN_EMAILS` in `backend/.env`, then register at `/admin/register`: a 6-digit code goes to that address, and the password is set only with it. Staff who forget their password use the same page: the code sets a new one and signs out every device. Removing an email from the list signs that account out and stops it signing in again.
 
 ### Updating an existing database
 `npm run db:deploy` applies new migrations. After the October 2026 ones everyone signs in again once (sessions became per-device), and the migration stops if two accounts share a roll number: decide which account owns it and fix the other first.
@@ -195,7 +195,7 @@ Defined once in `backend/src/config/policy.js`:
 | Late-return grace | 10 minutes |
 | Borrowing block | 3 late returns in 30 days, for 7 days; or while anything is overdue |
 | Room bookings | Whole hours, 6:00 to 22:00, up to 2 hours, up to 7 days ahead, 2 upcoming per student; the hour under way can still be booked |
-| Email codes | 6 digits, 5 tries per code, a new code at most once a minute; sign-up codes last 24 hours, reset codes 10 minutes |
+| Email codes | 6 digits, 5 tries per code, a new code at most once a minute; sign-up and staff codes last 24 hours, student reset codes 10 minutes |
 | Unconfirmed sign-ups | Hold nothing (a newer sign-up with the same email, username, phone or roll number replaces them) and are deleted when their code expires |
 | Retention | History and notifications 90 days; sessions end 10 days after their last refresh |
 
